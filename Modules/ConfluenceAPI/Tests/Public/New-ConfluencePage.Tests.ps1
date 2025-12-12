@@ -1,0 +1,291 @@
+#Requires -Modules Pester
+
+Describe 'New-ConfluencePage' {
+    BeforeAll {
+        $ModulePath = (Get-Item "$PSScriptRoot\..\..\ConfluenceAPI.psd1").FullName
+        Import-Module $ModulePath -Force
+    }
+
+    BeforeEach {
+        InModuleScope ConfluenceAPI {
+            $script:ConfluenceAPIKey = 'test-token'
+            $script:ConfluenceBaseURL = 'https://test.atlassian.net'
+        }
+    }
+
+    AfterEach {
+        InModuleScope ConfluenceAPI {
+            $script:ConfluenceAPIKey = $null
+            $script:ConfluenceBaseURL = $null
+        }
+    }
+
+    Context 'Create Page with Required Parameters' {
+        It 'Creates page with SpaceId and Title' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{
+                        id         = '123456'
+                        title      = 'New Page'
+                        spaceId    = '789012'
+                        status     = 'current'
+                        parentId   = $null
+                        parentType = $null
+                        authorId   = 'user123'
+                        createdAt  = '2025-12-11T10:00:00Z'
+                        version    = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '789012' -Title 'New Page'
+                $result.Id | Should Be '123456'
+                $result.Title | Should Be 'New Page'
+                $result.SpaceId | Should Be '789012'
+                $result.Status | Should Be 'current'
+                $result.Version | Should Be 1
+            }
+        }
+
+        It 'Calls POST endpoint' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test'
+                Assert-MockCalled Invoke-ConfluenceRequest -ParameterFilter {
+                    $Endpoint -eq '/wiki/api/v2/pages' -and $Method -eq 'POST'
+                }
+            }
+        }
+
+        It 'Includes spaceId and title in request body' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.spaceId -ne '789' -or $bodyObj.title -ne 'Test Title') {
+                        throw "Invalid body"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test Title'
+                        spaceId = '789'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '789' -Title 'Test Title'
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+    }
+
+    Context 'Create Page with Body Content' {
+        It 'Includes Body content when provided' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if (-not $bodyObj.body -or $bodyObj.body.value -ne '<p>Content</p>') {
+                        throw "Body not included correctly"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body '<p>Content</p>'
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Sets body representation to storage' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'storage') {
+                        throw "Body representation not storage"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body '<p>Test</p>'
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+    }
+
+    Context 'Create Child Page' {
+        It 'Includes ParentId when creating child page' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.parentId -ne '111222') {
+                        throw "ParentId not included"
+                    }
+                    @{
+                        id         = '123'
+                        title      = 'Child Page'
+                        spaceId    = '456'
+                        status     = 'current'
+                        parentId   = '111222'
+                        parentType = 'page'
+                        version    = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Child Page' -ParentId '111222'
+                $result.ParentId | Should Be '111222'
+            }
+        }
+
+        It 'Returns parent information in result' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{
+                        id         = '123'
+                        title      = 'Child Page'
+                        spaceId    = '456'
+                        status     = 'current'
+                        parentId   = '999'
+                        parentType = 'page'
+                        version    = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Child Page' -ParentId '999'
+                $result.ParentId | Should Be '999'
+                $result.ParentType | Should Be 'page'
+            }
+        }
+    }
+
+    Context 'WhatIf Support' {
+        It 'Does not call API when WhatIf is specified' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    throw "Should not be called"
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -WhatIf
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 0
+            }
+        }
+
+        It 'Returns null when WhatIf is specified' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{ id = '123' }
+                }
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -WhatIf
+                $result | Should Be $null
+            }
+        }
+    }
+
+    Context 'Return Value' {
+        It 'Returns PSCustomObject with correct properties' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{
+                        id         = '999'
+                        title      = 'Created Page'
+                        spaceId    = '888'
+                        status     = 'current'
+                        parentId   = $null
+                        parentType = $null
+                        authorId   = 'author123'
+                        createdAt  = '2025-12-11T12:00:00Z'
+                        version    = @{ number = 1 }
+                    }
+                }
+
+                $result = New-ConfluencePage -SpaceId '888' -Title 'Created Page'
+                $propNames = $result.PSObject.Properties.Name
+
+                ($propNames -contains 'Id') | Should Be $true
+                ($propNames -contains 'Title') | Should Be $true
+                ($propNames -contains 'SpaceId') | Should Be $true
+                ($propNames -contains 'Status') | Should Be $true
+                ($propNames -contains 'ParentId') | Should Be $true
+                ($propNames -contains 'ParentType') | Should Be $true
+                ($propNames -contains 'AuthorId') | Should Be $true
+                ($propNames -contains 'CreatedAt') | Should Be $true
+                ($propNames -contains 'Version') | Should Be $true
+            }
+        }
+    }
+
+    Context 'Error Handling' {
+        It 'Throws when space not found' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    throw [System.Exception]::new('Resource not found (404)')
+                }
+
+                { New-ConfluencePage -SpaceId '999' -Title 'Test' } | Should Throw 'was not found'
+            }
+        }
+
+        It 'Throws when access denied' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    throw [System.Exception]::new('Access forbidden (403)')
+                }
+
+                { New-ConfluencePage -SpaceId '456' -Title 'Test' } | Should Throw 'Access denied'
+            }
+        }
+
+        It 'Throws when null response received' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    return $null
+                }
+
+                { New-ConfluencePage -SpaceId '456' -Title 'Test' } | Should Throw 'Failed to create'
+            }
+        }
+    }
+
+    Context 'Verbose Output' {
+        It 'Logs verbose message when creating page' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+                Mock Write-Verbose { } -Verifiable
+
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Verbose
+                Assert-MockCalled Write-Verbose
+            }
+        }
+    }
+}

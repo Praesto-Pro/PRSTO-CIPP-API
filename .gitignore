@@ -13,3 +13,23 @@ SendNotifications/config.json
 
 # Cursor IDE
 .cursor/rules
+
+# BMad files
+.agentvibes/
+.bmad/
+.mcp.json
+
+#claude files
+.claude/
+CLAUDE.md
+nul
+
+#docs files to ignore
+docs/
+
+#scripts files to ignore
+scripts/
+package-lock.json
+
+
+
