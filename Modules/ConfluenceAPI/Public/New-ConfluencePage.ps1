@@ -33,6 +33,12 @@ function New-ConfluencePage {
         New-ConfluencePage -SpaceId '123456' -Title 'Test Page' -WhatIf
 
         Shows what would happen without actually creating the page.
+    .EXAMPLE
+        $adfJson = '{"version":1,"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello World"}]}]}'
+        New-ConfluencePage -SpaceId '123456' -Title 'ADF Page' -Body $adfJson
+
+        Creates a new page with ADF (Atlassian Document Format) content.
+        The function automatically detects ADF JSON and sets the correct representation.
     .NOTES
         Requires credentials to be configured via New-ConfluenceAPIKey and New-ConfluenceBaseURL.
     #>
@@ -66,8 +72,28 @@ function New-ConfluencePage {
 
     # Add body content if provided
     if ($Body) {
+        # Detect if body is ADF JSON by parsing and validating structure
+        # ADF format: {"version":1,"type":"doc","content":[...]}
+        $isADF = $false
+        if ($Body -match '^\s*\{') {
+            try {
+                $parsed = $Body | ConvertFrom-Json -ErrorAction Stop
+                # Valid ADF must have version=1, type="doc", and content property
+                $isADF = ($parsed.version -eq 1) -and
+                         ($parsed.type -eq 'doc') -and
+                         ($null -ne $parsed.content)
+            }
+            catch {
+                # Not valid JSON, treat as storage format
+                $isADF = $false
+            }
+        }
+
+        $representation = if ($isADF) { 'atlas_doc_format' } else { 'storage' }
+        Write-Verbose "Body format detected: $representation"
+
         $requestBody.body = @{
-            representation = 'storage'
+            representation = $representation
             value          = $Body
         }
     }

@@ -111,7 +111,7 @@ Describe 'New-ConfluencePage' {
             }
         }
 
-        It 'Sets body representation to storage' {
+        It 'Sets body representation to storage for HTML content' {
             InModuleScope ConfluenceAPI {
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
@@ -129,6 +129,156 @@ Describe 'New-ConfluencePage' {
                 }
 
                 $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body '<p>Test</p>'
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+    }
+
+    Context 'Create Page with ADF Content' {
+        It 'Sets body representation to atlas_doc_format for ADF JSON' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'atlas_doc_format') {
+                        throw "Body representation not atlas_doc_format, was: $($bodyObj.body.representation)"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $adfJson = '{"version":1,"type":"doc","content":[]}'
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Detects ADF JSON with content' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'atlas_doc_format') {
+                        throw "Body representation not atlas_doc_format"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $adfJson = '{"version":1,"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}'
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Detects ADF with whitespace formatting' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'atlas_doc_format') {
+                        throw "Body representation not atlas_doc_format"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                $adfJson = @'
+{
+    "version": 1,
+    "type": "doc",
+    "content": []
+}
+'@
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Uses storage format for non-ADF JSON-like content' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'storage') {
+                        throw "Body representation not storage, was: $($bodyObj.body.representation)"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                # This is JSON but not ADF (missing version:1 and type:doc)
+                $nonAdfJson = '{"name":"test","value":123}'
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $nonAdfJson
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Uses storage format for JSON with misleading ADF-like properties' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'storage') {
+                        throw "Body representation not storage, was: $($bodyObj.body.representation)"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                # This JSON has version:1 and mentions "doc" but is NOT valid ADF
+                # (type is not "doc", it's "note", and docType is a different property)
+                $misleadingJson = '{"version":1,"docType":"doc","type":"note"}'
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $misleadingJson
+                Assert-MockCalled Invoke-ConfluenceRequest -Times 1
+            }
+        }
+
+        It 'Uses storage format for invalid JSON strings' {
+            InModuleScope ConfluenceAPI {
+                Mock Invoke-ConfluenceRequest {
+                    param($Endpoint, $Method, $Body)
+                    $bodyObj = $Body | ConvertFrom-Json
+                    if ($bodyObj.body.representation -ne 'storage') {
+                        throw "Body representation not storage, was: $($bodyObj.body.representation)"
+                    }
+                    @{
+                        id      = '123'
+                        title   = 'Test'
+                        spaceId = '456'
+                        status  = 'current'
+                        version = @{ number = 1 }
+                    }
+                }
+
+                # This looks like it starts with { but is not valid JSON
+                $invalidJson = '{not valid json at all'
+                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $invalidJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
