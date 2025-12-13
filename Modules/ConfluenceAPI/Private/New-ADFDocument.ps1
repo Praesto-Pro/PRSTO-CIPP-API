@@ -23,7 +23,19 @@ function New-ADFDocument {
     .NOTES
         This is a private function used internally by the ConfluenceAPI module.
         Use ConvertTo-ADF for the public-facing ADF generation.
+    .LINK
+        Add-ADFContent
+    .LINK
+        ConvertTo-ADF
+    .LINK
+        New-ADFHeading
+    .LINK
+        New-ADFParagraph
+    .LINK
+        https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Creates in-memory data structure only, no system state changes')]
     [CmdletBinding()]
     [OutputType([hashtable])]
     param()
