@@ -30,7 +30,8 @@
         'Get-ConfluenceLabel',
         'Add-ConfluenceLabel',
         'Remove-ConfluenceLabel',
-        'Search-Confluence'
+        'Search-Confluence',
+        'Sync-ConfluenceUserInventory'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
