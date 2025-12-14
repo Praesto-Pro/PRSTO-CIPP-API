@@ -78,7 +78,7 @@ development_status:
   5-2-endpoint-inventory-sync-function: done
   5-3-license-data-transformer: done
   5-4-license-report-sync-function: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: completed
 
   # Epic 6: Security & Collaboration Data Sync
   epic-6: backlog
