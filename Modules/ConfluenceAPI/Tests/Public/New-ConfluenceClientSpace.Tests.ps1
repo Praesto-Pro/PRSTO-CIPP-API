@@ -21,9 +21,10 @@ Describe 'New-ConfluenceClientSpace' {
         . "$privateDir\New-ADFHeading.ps1"
         . "$privateDir\New-ADFParagraph.ps1"
 
-        # Dot-source mapping functions
-        . "$privateDir\Get-ConfluenceTenantMapping.ps1"
-        . "$privateDir\Set-ConfluenceTenantMapping.ps1"
+        # Dot-source mapping functions (Public)
+        . "$publicDir\Get-ConfluenceTenantMapping.ps1"
+        . "$publicDir\Set-ConfluenceTenantMapping.ps1"
+        # Dot-source homepage transformer (Private)
         . "$privateDir\ConvertTo-ConfluenceClientHomepage.ps1"
 
         # Dot-source the function under test

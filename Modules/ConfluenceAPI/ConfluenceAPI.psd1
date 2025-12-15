@@ -10,29 +10,49 @@
     CompatiblePSEditions = @('Desktop', 'Core')
     RequiredModules = @()  # Zero external dependencies by design (NFR)
     FunctionsToExport = @(
+        # API Key Management (Epic 1)
         'New-ConfluenceAPIKey',
         'Get-ConfluenceAPIKey',
         'Remove-ConfluenceAPIKey',
+        # Base URL Management (Epic 1)
         'New-ConfluenceBaseURL',
         'Get-ConfluenceBaseURL',
         'Remove-ConfluenceBaseURL',
+        # Connection (Epic 1)
         'Test-ConfluenceConnection',
         'Invoke-ConfluenceRequest',
+        # Space Operations (Epic 2)
         'Get-ConfluenceSpace',
         'New-ConfluenceSpace',
         'Set-ConfluenceSpace',
         'Remove-ConfluenceSpace',
+        # Page Operations (Epic 2)
         'Get-ConfluencePage',
         'New-ConfluencePage',
         'Set-ConfluencePage',
         'Remove-ConfluencePage',
         'Move-ConfluencePage',
+        # Label Operations (Epic 2)
         'Get-ConfluenceLabel',
         'Add-ConfluenceLabel',
         'Remove-ConfluenceLabel',
+        # Search (Epic 2)
         'Search-Confluence',
+        # Data Sync Functions (Epic 4-6)
         'Sync-ConfluenceUserInventory',
-        'Sync-ConfluenceEndpointInventory'
+        'Sync-ConfluenceEndpointInventory',
+        'Sync-ConfluenceLicenseReport',
+        'Sync-ConfluenceMFAReport',
+        'Sync-ConfluenceTeamsInventory',
+        'Sync-ConfluenceSharePointInventory',
+        # Client Space Management (Epic 7)
+        'New-ConfluenceClientSpace',
+        'Get-ConfluenceTenantMapping',
+        'Set-ConfluenceTenantMapping',
+        'Remove-ConfluenceTenantMapping',
+        'Update-ConfluenceClientIndex',
+        # Sync Orchestration (Epic 8)
+        'Sync-CIPPTenantToConfluence'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
