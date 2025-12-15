@@ -90,8 +90,8 @@ development_status:
   # Epic 7: Client Space Management
   epic-7: in-progress
   7-1-client-space-creation: done
-  7-2-tenant-space-mapping-management: backlog
-  7-3-clients-index-maintenance: backlog
+  7-2-tenant-space-mapping-management: done
+  7-3-clients-index-maintenance: ready-for-dev
   epic-7-retrospective: optional
 
   # Epic 8: Sync Orchestration & Automation
