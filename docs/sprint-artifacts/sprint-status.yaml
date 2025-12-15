@@ -85,11 +85,11 @@ development_status:
   6-1-mfa-status-transformer-sync: done
   6-2-teams-inventory-transformer-sync: done
   6-3-sharepoint-inventory-transformer-sync: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: completed
 
   # Epic 7: Client Space Management
-  epic-7: backlog
-  7-1-client-space-creation: backlog
+  epic-7: in-progress
+  7-1-client-space-creation: done
   7-2-tenant-space-mapping-management: backlog
   7-3-clients-index-maintenance: backlog
   epic-7-retrospective: optional
