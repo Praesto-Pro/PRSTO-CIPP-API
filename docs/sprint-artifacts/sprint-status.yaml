@@ -97,7 +97,7 @@ development_status:
   # Epic 8: Sync Orchestration & Automation
   epic-8: in-progress
   8-1-manual-tenant-sync: done
-  8-2-sync-configuration: backlog
+  8-2-sync-configuration: done
   8-3-retry-logic-error-recovery: backlog
   8-4-incremental-sync-support: backlog
   epic-8-retrospective: optional

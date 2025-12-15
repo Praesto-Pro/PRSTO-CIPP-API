@@ -52,7 +52,11 @@
         'Remove-ConfluenceTenantMapping',
         'Update-ConfluenceClientIndex',
         # Sync Orchestration (Epic 8)
-        'Sync-CIPPTenantToConfluence'
+        'Sync-CIPPTenantToConfluence',
+        # Sync Configuration (Epic 8)
+        'Set-ConfluenceSyncConfiguration',
+        'Get-ConfluenceSyncConfiguration',
+        'Remove-ConfluenceSyncConfiguration'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
