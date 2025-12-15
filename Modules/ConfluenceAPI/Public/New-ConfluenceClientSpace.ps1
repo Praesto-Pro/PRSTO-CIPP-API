@@ -112,6 +112,16 @@ function New-ConfluenceClientSpace {
         Write-Verbose "Storing tenant-to-space mapping for '$TenantId' -> '$SpaceKey'"
         Set-ConfluenceTenantMapping -TenantId $TenantId -SpaceKey $SpaceKey -SpaceName $ClientName
 
+        # Update CLIENTS-INDEX (non-blocking - failure should not fail space creation)
+        Write-Verbose "Updating CLIENTS-INDEX with new client '$ClientName'"
+        try {
+            Update-ConfluenceClientIndex | Out-Null
+            Write-Verbose "Successfully updated CLIENTS-INDEX"
+        }
+        catch {
+            Write-Warning "Failed to update CLIENTS-INDEX: $($_.Exception.Message). Space creation succeeded, but index may be stale."
+        }
+
         Write-Verbose "Successfully created client space '$SpaceKey' for tenant '$TenantId'"
         return [PSCustomObject]@{
             Id         = $space.Id
