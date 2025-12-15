@@ -81,10 +81,10 @@ development_status:
   epic-5-retrospective: completed
 
   # Epic 6: Security & Collaboration Data Sync
-  epic-6: in-progress
+  epic-6: done
   6-1-mfa-status-transformer-sync: done
   6-2-teams-inventory-transformer-sync: done
-  6-3-sharepoint-inventory-transformer-sync: backlog
+  6-3-sharepoint-inventory-transformer-sync: done
   epic-6-retrospective: optional
 
   # Epic 7: Client Space Management
