@@ -3,8 +3,10 @@ function Get-DataHash {
     .SYNOPSIS
         Computes a SHA256 hash of input data for change detection.
     .DESCRIPTION
-        Converts input data to sorted JSON and computes SHA256 hash.
+        Converts input data to JSON and computes SHA256 hash.
         Used for incremental sync to detect data changes.
+        Note: JSON property order depends on input structure; CIPP API
+        returns data with consistent ordering.
     .PARAMETER InputData
         The data to hash (typically an array of objects).
     .OUTPUTS
@@ -42,12 +44,17 @@ function Get-DataHash {
         Write-Verbose "Converted data to JSON string (length: $($dataString.Length))"
     }
 
-    # Compute SHA256 hash
+    # Compute SHA256 hash (with proper disposal)
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($dataString)
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    $hashBytes = $sha256.ComputeHash($bytes)
-    $fullHash = [BitConverter]::ToString($hashBytes) -replace '-', ''
-    $shortHash = $fullHash.Substring(0, 16)
+    try {
+        $hashBytes = $sha256.ComputeHash($bytes)
+        $fullHash = [BitConverter]::ToString($hashBytes) -replace '-', ''
+        $shortHash = $fullHash.Substring(0, 16)
+    }
+    finally {
+        $sha256.Dispose()
+    }
 
     Write-Verbose "Hash computed: $shortHash..."
 

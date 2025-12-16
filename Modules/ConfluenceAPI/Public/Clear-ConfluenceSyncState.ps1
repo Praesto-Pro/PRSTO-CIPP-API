@@ -29,6 +29,10 @@ function Clear-ConfluenceSyncState {
         Part of Story 8.4 - Incremental Sync Support.
         FR38: System can skip sync for unchanged data.
         NFR18: Module must include -WhatIf support for all write operations.
+
+        IMPORTANT: Sync state is stored in-memory only. State is automatically
+        cleared when PowerShell session ends or module is reloaded.
+        Use this function to force full sync without restarting the session.
     .LINK
         Get-ConfluenceSyncState
     .LINK

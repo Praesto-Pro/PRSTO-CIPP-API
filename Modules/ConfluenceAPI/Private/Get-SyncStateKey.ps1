@@ -33,7 +33,5 @@ function Get-SyncStateKey {
     return "$TenantId|$DataType"
 }
 
-# Initialize state cache at module scope if not already initialized
-if (-not $script:SyncStateCache) {
-    $script:SyncStateCache = @{}
-}
+# Note: $script:SyncStateCache is initialized in ConfluenceAPI.psm1
+# Defensive checks in consuming functions handle edge cases during testing

@@ -1,5 +1,11 @@
 #Requires -Version 5.1
 
+# Initialize module-level state cache for incremental sync (Story 8.4)
+# Note: This cache is volatile - cleared on module reload or PowerShell restart
+if (-not $script:SyncStateCache) {
+    $script:SyncStateCache = @{}
+}
+
 # Get public and private function files
 $Public = @(Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -ErrorAction SilentlyContinue)
 $Private = @(Get-ChildItem -Path "$PSScriptRoot\Private\*.ps1" -ErrorAction SilentlyContinue)

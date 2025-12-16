@@ -26,6 +26,12 @@ function Get-ConfluenceSyncState {
     .NOTES
         Part of Story 8.4 - Incremental Sync Support.
         FR38: System can skip sync for unchanged data.
+
+        IMPORTANT: Sync state is stored in-memory only. State is lost when:
+        - PowerShell session ends
+        - Module is removed/reloaded
+        - Import-Module -Force is used
+        After state loss, next sync will perform full sync for all data types.
     .LINK
         Clear-ConfluenceSyncState
     .LINK
