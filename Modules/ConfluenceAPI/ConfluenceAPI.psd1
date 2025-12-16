@@ -56,7 +56,10 @@
         # Sync Configuration (Epic 8)
         'Set-ConfluenceSyncConfiguration',
         'Get-ConfluenceSyncConfiguration',
-        'Remove-ConfluenceSyncConfiguration'
+        'Remove-ConfluenceSyncConfiguration',
+        # Incremental Sync State Management (Epic 8)
+        'Get-ConfluenceSyncState',
+        'Clear-ConfluenceSyncState'
     )
     CmdletsToExport = @()
     VariablesToExport = @()

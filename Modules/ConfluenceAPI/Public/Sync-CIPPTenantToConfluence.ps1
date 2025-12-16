@@ -32,8 +32,11 @@ function Sync-CIPPTenantToConfluence {
         Sync-CIPPTenantToConfluence -TenantId 'abc-123' -Users $users -WhatIf
         Shows what would be synced without making changes.
     .NOTES
-        Part of Story 8.1 - Manual Tenant Sync.
+        Part of Story 8.1 - Manual Tenant Sync (enhanced by Story 8.3 and 8.4).
         FR34: Technical Lead can trigger manual sync for a specific tenant.
+        FR37: System can handle sync failures with retry logic.
+        FR38: System can skip sync for unchanged data (incremental sync).
+        NFR10: Transient failures must retry automatically (up to configured attempts).
         NFR18: Module must include -WhatIf support for all write operations.
         NFR19: Module must include -Verbose logging for troubleshooting.
     .LINK
@@ -98,6 +101,11 @@ function Sync-CIPPTenantToConfluence {
     $spaceKey = $mapping.SpaceKey
     Write-Verbose "Tenant '$TenantId' maps to space '$spaceKey'"
 
+    # Get sync configuration for incremental sync support
+    $syncConfig = Get-ConfluenceSyncConfiguration
+    $incrementalEnabled = $syncConfig.EnableIncrementalSync
+    Write-Verbose "Incremental sync enabled: $incrementalEnabled"
+
     # Initialize results tracking
     $syncResults = @()
     $errors = @()
@@ -117,15 +125,39 @@ function Sync-CIPPTenantToConfluence {
         if (-not $PSBoundParameters.ContainsKey($op.ParamName)) {
             Write-Verbose "Skipping $($op.Name) - no data provided"
             $syncResults += [PSCustomObject]@{
-                DataType = $op.Name
-                Status   = 'Skipped'
-                PageId   = $null
-                Message  = 'No data provided'
+                DataType   = $op.Name
+                Status     = 'Skipped'
+                PageId     = $null
+                Message    = 'No data provided'
+                RetryCount = $null
             }
             continue
         }
 
-        Write-Verbose "Syncing $($op.Name) to space '$spaceKey'"
+        # Incremental sync: check if data has changed (before retry wrapper for efficiency)
+        $changeResult = $null
+        if ($incrementalEnabled) {
+            $changeResult = Test-DataChanged -TenantId $TenantId -DataType $op.Name -InputData $op.Data
+
+            if (-not $changeResult.HasChanged) {
+                Write-Verbose "Skipping unchanged: $($op.Name) (hash match)"
+                # Get existing page ID from state cache for the result
+                $stateKey = Get-SyncStateKey -TenantId $TenantId -DataType $op.Name
+                $existingState = $script:SyncStateCache[$stateKey]
+                $syncResults += [PSCustomObject]@{
+                    DataType   = $op.Name
+                    Status     = 'Unchanged'
+                    PageId     = if ($existingState) { $existingState.PageId } else { $null }
+                    Message    = 'Data unchanged since last sync'
+                    RetryCount = $null
+                }
+                continue
+            }
+            Write-Verbose "Syncing changed: $($op.Name)"
+        }
+        else {
+            Write-Verbose "Syncing $($op.Name) to space '$spaceKey'"
+        }
 
         if ($PSCmdlet.ShouldProcess("$($op.Name) in $spaceKey", "Sync CIPP data")) {
             try {
@@ -135,24 +167,50 @@ function Sync-CIPPTenantToConfluence {
                 }
                 $syncParams[$op.DataParam] = $op.Data
 
-                # Call sync function
-                $syncFunctionResult = & $op.Function @syncParams
+                # Wrap sync call with retry logic for transient failures
+                # Capture variables for scriptblock scope
+                $syncFunction = $op.Function
+                $operationName = $op.Name
+
+                # Track attempt count for retry statistics
+                $attemptCount = 0
+                $syncFunctionResult = Invoke-WithRetry -ScriptBlock {
+                    & $syncFunction @syncParams
+                } -OperationName "$operationName sync" -AttemptsTaken ([ref]$attemptCount)
 
                 $syncResults += [PSCustomObject]@{
-                    DataType = $op.Name
-                    Status   = 'Success'
-                    PageId   = $syncFunctionResult.Id
-                    Message  = "Synced successfully"
+                    DataType   = $op.Name
+                    Status     = 'Success'
+                    PageId     = $syncFunctionResult.Id
+                    Message    = "Synced successfully"
+                    RetryCount = [Math]::Max(0, $attemptCount - 1)
                 }
+
+                # Update state cache after successful sync (for incremental sync)
+                if ($incrementalEnabled -and $changeResult) {
+                    $stateKey = Get-SyncStateKey -TenantId $TenantId -DataType $op.Name
+                    if (-not $script:SyncStateCache) {
+                        $script:SyncStateCache = @{}
+                    }
+                    $script:SyncStateCache[$stateKey] = @{
+                        Hash         = $changeResult.CurrentHash
+                        LastSyncTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss UTC')
+                        PageId       = $syncFunctionResult.Id
+                    }
+                    Write-Verbose "Stored new hash for $($op.Name)"
+                }
+
                 Write-Verbose "$($op.Name) sync completed successfully"
             }
             catch {
+                # Error may include retry information if retries were attempted
                 Write-Warning "$($op.Name) sync failed: $($_.Exception.Message)"
                 $syncResults += [PSCustomObject]@{
-                    DataType = $op.Name
-                    Status   = 'Failed'
-                    PageId   = $null
-                    Message  = $_.Exception.Message
+                    DataType   = $op.Name
+                    Status     = 'Failed'
+                    PageId     = $null
+                    Message    = $_.Exception.Message
+                    RetryCount = $null
                 }
                 $errors += [PSCustomObject]@{
                     DataType  = $op.Name
@@ -163,10 +221,11 @@ function Sync-CIPPTenantToConfluence {
         }
         else {
             $syncResults += [PSCustomObject]@{
-                DataType = $op.Name
-                Status   = 'WhatIf'
-                PageId   = $null
-                Message  = 'Would sync'
+                DataType   = $op.Name
+                Status     = 'WhatIf'
+                PageId     = $null
+                Message    = 'Would sync'
+                RetryCount = $null
             }
         }
     }
@@ -178,6 +237,7 @@ function Sync-CIPPTenantToConfluence {
     $successCount = @($syncResults | Where-Object { $_.Status -eq 'Success' }).Count
     $failedCount = @($syncResults | Where-Object { $_.Status -eq 'Failed' }).Count
     $skippedCount = @($syncResults | Where-Object { $_.Status -eq 'Skipped' }).Count
+    $unchangedCount = @($syncResults | Where-Object { $_.Status -eq 'Unchanged' }).Count
     $whatIfCount = @($syncResults | Where-Object { $_.Status -eq 'WhatIf' }).Count
 
     if ($whatIfCount -gt 0) {
@@ -192,24 +252,29 @@ function Sync-CIPPTenantToConfluence {
     elseif ($failedCount -gt 0 -and $successCount -eq 0) {
         $overallStatus = 'Failed'
     }
+    elseif ($unchangedCount -gt 0 -and $successCount -eq 0 -and $failedCount -eq 0) {
+        # All provided data was unchanged (incremental sync)
+        $overallStatus = 'Unchanged'
+    }
     else {
         $overallStatus = 'NoOperation'
     }
 
-    Write-Verbose "Sync completed for tenant '$TenantId': $overallStatus ($successCount succeeded, $failedCount failed, $skippedCount skipped)"
+    Write-Verbose "Sync completed for tenant '$TenantId': $overallStatus ($successCount succeeded, $failedCount failed, $skippedCount skipped, $unchangedCount unchanged)"
 
     return [PSCustomObject]@{
-        TenantId      = $TenantId
-        SpaceKey      = $spaceKey
-        StartTime     = $startTime.ToString('yyyy-MM-dd HH:mm:ss UTC')
-        EndTime       = $endTime.ToString('yyyy-MM-dd HH:mm:ss UTC')
-        Duration      = $duration.ToString('hh\:mm\:ss')
-        SyncResults   = $syncResults
-        OverallStatus = $overallStatus
-        SuccessCount  = $successCount
-        FailedCount   = $failedCount
-        SkippedCount  = $skippedCount
-        ErrorCount    = $errors.Count
-        Errors        = $errors
+        TenantId       = $TenantId
+        SpaceKey       = $spaceKey
+        StartTime      = $startTime.ToString('yyyy-MM-dd HH:mm:ss UTC')
+        EndTime        = $endTime.ToString('yyyy-MM-dd HH:mm:ss UTC')
+        Duration       = $duration.ToString('hh\:mm\:ss')
+        SyncResults    = $syncResults
+        OverallStatus  = $overallStatus
+        SuccessCount   = $successCount
+        FailedCount    = $failedCount
+        SkippedCount   = $skippedCount
+        UnchangedCount = $unchangedCount
+        ErrorCount     = $errors.Count
+        Errors         = $errors
     }
 }

@@ -1,6 +1,7 @@
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $moduleRoot = Split-Path -Parent (Split-Path -Parent $here)
 $publicDir = Join-Path $moduleRoot 'Public'
+$privateDir = Join-Path $moduleRoot 'Private'
 
 Describe 'Sync-CIPPTenantToConfluence' {
     BeforeAll {
@@ -12,6 +13,24 @@ Describe 'Sync-CIPPTenantToConfluence' {
         function Sync-ConfluenceMFAReport { param($SpaceKey, $MFAData) }
         function Sync-ConfluenceTeamsInventory { param($SpaceKey, $TeamsData) }
         function Sync-ConfluenceSharePointInventory { param($SpaceKey, $SharePointData) }
+
+        # Stub for sync configuration (used by Invoke-WithRetry and incremental sync)
+        function Get-ConfluenceSyncConfiguration {
+            [PSCustomObject]@{
+                RetryAttempts         = 3
+                RetryDelaySeconds     = 1
+                EnableIncrementalSync = $false
+            }
+        }
+
+        # Load private helper functions
+        . "$privateDir\Invoke-WithRetry.ps1"
+        . "$privateDir\Get-DataHash.ps1"
+        . "$privateDir\Get-SyncStateKey.ps1"
+        . "$privateDir\Test-DataChanged.ps1"
+
+        # Initialize sync state cache
+        $script:SyncStateCache = @{}
 
         # Dot-source function under test
         . "$publicDir\Sync-CIPPTenantToConfluence.ps1"
@@ -425,6 +444,479 @@ Describe 'Sync-CIPPTenantToConfluence' {
         It 'Includes error message in error records' {
             $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
             $result.Errors[0].Error | Should Match 'User sync error'
+        }
+    }
+
+    Context 'Retry Logic Integration (Story 8.3)' {
+        BeforeEach {
+            Mock Get-ConfluenceTenantMapping {
+                [PSCustomObject]@{ TenantId = 'test'; SpaceKey = 'TEST'; SpaceName = 'Test' }
+            }
+        }
+
+        It 'Uses Invoke-WithRetry wrapper for sync operations' {
+            # Verify that sync operations go through retry logic by checking
+            # that transient errors are retried
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 2) {
+                    throw "Server error (500)"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Success'
+            $script:attemptCount | Should Be 2
+        }
+
+        It 'Retries on 5xx server error and succeeds' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 2) {
+                    throw "Service unavailable (503)"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Success'
+        }
+
+        It 'Retries on 429 rate limit and succeeds' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 2) {
+                    throw "Rate limit exceeded (429)"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Success'
+        }
+
+        It 'Retries on network timeout and succeeds' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 2) {
+                    throw "Connection timed out"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Success'
+        }
+
+        It 'Does NOT retry on 4xx client error' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                throw "Bad request (400)"
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Failed'
+            $script:attemptCount | Should Be 1
+        }
+
+        It 'Does NOT retry on 404 not found' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                throw "Not found (404)"
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Failed'
+            $script:attemptCount | Should Be 1
+        }
+
+        It 'Fails after all retries exhausted' {
+            Mock Sync-ConfluenceUserInventory {
+                throw "Server error (500)"
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $result.OverallStatus | Should Be 'Failed'
+        }
+
+        It 'Error includes retry information when retries exhausted' {
+            Mock Sync-ConfluenceUserInventory {
+                throw "Server error (500)"
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $failed = @($result.SyncResults | Where-Object { $_.Status -eq 'Failed' })
+            $failed[0].Message | Should Match 'retries'
+        }
+
+        It 'Continues to next data type after retry failure' {
+            Mock Sync-ConfluenceUserInventory { throw "Server error (500)" }
+            Mock Sync-ConfluenceEndpointInventory { [PSCustomObject]@{ Id = 'endpoint-123' } }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Endpoints @()
+            Assert-MockCalled Sync-ConfluenceEndpointInventory -Scope It -Times 1
+            $result.OverallStatus | Should Be 'PartialFailure'
+        }
+
+        It 'WhatIf does not invoke retry logic' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                [PSCustomObject]@{ Id = 'user-123' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -WhatIf
+            $script:attemptCount | Should Be 0
+            $result.OverallStatus | Should Be 'WhatIf'
+        }
+
+        It 'Reports success after transient failure recovery' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 3) {
+                    throw "Confluence server error"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $success = @($result.SyncResults | Where-Object { $_.Status -eq 'Success' })
+            $success.Count | Should Be 1
+            $success[0].PageId | Should Be 'user-123'
+        }
+
+        It 'Writes verbose messages during retry' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 2) {
+                    throw "Server error (500)"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $verboseOutput = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Verbose 4>&1
+            $verboseMessages = $verboseOutput | Where-Object { $_ -is [System.Management.Automation.VerboseRecord] }
+            $verboseText = ($verboseMessages | ForEach-Object { $_.Message }) -join ' '
+            # Should contain retry-related messages
+            $verboseText | Should Match 'sync'
+        }
+
+        It 'Includes RetryCount of 0 when no retries needed' {
+            Mock Sync-ConfluenceUserInventory {
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $success = @($result.SyncResults | Where-Object { $_.Status -eq 'Success' })
+            $success[0].RetryCount | Should Be 0
+        }
+
+        It 'Includes RetryCount showing retries on transient failure recovery' {
+            $script:attemptCount = 0
+            Mock Sync-ConfluenceUserInventory {
+                $script:attemptCount++
+                if ($script:attemptCount -lt 3) {
+                    throw "Server error (500)"
+                }
+                [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $success = @($result.SyncResults | Where-Object { $_.Status -eq 'Success' })
+            # 3 attempts means 2 retries
+            $success[0].RetryCount | Should Be 2
+        }
+
+        It 'SyncResults include RetryCount property for all statuses' {
+            Mock Sync-ConfluenceUserInventory {
+                [PSCustomObject]@{ Id = 'user-123' }
+            }
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            # Skipped results should have RetryCount = null
+            $skipped = @($result.SyncResults | Where-Object { $_.Status -eq 'Skipped' })
+            ($skipped[0].PSObject.Properties.Name -contains 'RetryCount') | Should Be $true
+        }
+    }
+
+    Context 'Incremental Sync Support (Story 8.4)' {
+        BeforeEach {
+            Mock Get-ConfluenceTenantMapping {
+                [PSCustomObject]@{ TenantId = 'test'; SpaceKey = 'TEST'; SpaceName = 'Test' }
+            }
+            Mock Sync-ConfluenceUserInventory { [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' } }
+            Mock Sync-ConfluenceEndpointInventory { [PSCustomObject]@{ Id = 'endpoint-123'; Title = 'Endpoint Inventory' } }
+
+            # Reset state cache before each test
+            $script:SyncStateCache = @{}
+        }
+
+        It 'Syncs all data when EnableIncrementalSync is false' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $false
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'User1' })
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Both calls should sync because incremental is disabled
+            Assert-MockCalled Sync-ConfluenceUserInventory -Scope It -Times 2
+        }
+
+        It 'Skips unchanged data when EnableIncrementalSync is true' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'User1' })
+
+            # First sync - should sync
+            $result1 = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $result1.SyncResults[0].Status | Should Be 'Success'
+
+            # Second sync with same data - should skip
+            $result2 = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $unchanged = @($result2.SyncResults | Where-Object { $_.Status -eq 'Unchanged' })
+            $unchanged.Count | Should Be 1
+        }
+
+        It 'Syncs changed data even with incremental enabled' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users1 = @([PSCustomObject]@{ Name = 'Original' })
+            $users2 = @([PSCustomObject]@{ Name = 'Changed' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users1
+
+            # Second sync with changed data - should sync
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users2
+            $result.SyncResults[0].Status | Should Be 'Success'
+        }
+
+        It 'First sync always runs (no previous state)' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+            $result = Sync-CIPPTenantToConfluence -TenantId 'new-tenant' -Users $users
+            $result.SyncResults[0].Status | Should Be 'Success'
+        }
+
+        It 'SyncResult includes Unchanged status' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Second sync
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $unchanged = @($result.SyncResults | Where-Object { $_.Status -eq 'Unchanged' })
+            $unchanged[0].Message | Should Match 'unchanged'
+        }
+
+        It 'Overall status is Unchanged when all data unchanged' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Second sync
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $result.OverallStatus | Should Be 'Unchanged'
+        }
+
+        It 'Includes UnchangedCount in result' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Second sync
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $result.UnchangedCount | Should Be 1
+        }
+
+        It 'WhatIf checks change detection but does not update state' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # WhatIf sync - should not store state
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users -WhatIf
+
+            # Actual sync - should still run because state wasn't stored
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $result.SyncResults[0].Status | Should Be 'Success'
+        }
+
+        It 'State updated after successful sync' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Check state was stored
+            $stateKey = 'test|UserInventory'
+            $script:SyncStateCache.ContainsKey($stateKey) | Should Be $true
+            $script:SyncStateCache[$stateKey].Hash | Should Not Be $null
+            $script:SyncStateCache[$stateKey].PageId | Should Be 'user-123'
+        }
+
+        It 'Multiple data types tracked independently' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'User1' })
+            $endpoints = @([PSCustomObject]@{ Name = 'Endpoint1' })
+
+            # First sync both
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users -Endpoints $endpoints
+
+            # Change users, keep endpoints same
+            $users2 = @([PSCustomObject]@{ Name = 'User2' })
+
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users2 -Endpoints $endpoints
+
+            # Users should be Success (changed), Endpoints should be Unchanged
+            $userResult = @($result.SyncResults | Where-Object { $_.DataType -eq 'UserInventory' })
+            $endpointResult = @($result.SyncResults | Where-Object { $_.DataType -eq 'EndpointInventory' })
+
+            $userResult[0].Status | Should Be 'Success'
+            $endpointResult[0].Status | Should Be 'Unchanged'
+        }
+
+        It 'Logs verbose messages for change detection' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Second sync with verbose
+            $verboseOutput = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users -Verbose 4>&1
+            $verboseText = ($verboseOutput | Where-Object { $_ -is [System.Management.Automation.VerboseRecord] }).Message -join ' '
+            $verboseText | Should Match 'unchanged'
+        }
+
+        It 'Unchanged result includes existing PageId from state' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # Second sync
+            $result = Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $unchanged = @($result.SyncResults | Where-Object { $_.Status -eq 'Unchanged' })
+            $unchanged[0].PageId | Should Be 'user-123'
+        }
+
+        It 'State not updated on sync failure' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 1
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            Mock Sync-ConfluenceUserInventory { throw "Sync error (400)" }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # Failed sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+
+            # State should not be stored
+            $stateKey = 'test|UserInventory'
+            $script:SyncStateCache.ContainsKey($stateKey) | Should Be $false
         }
     }
 }
