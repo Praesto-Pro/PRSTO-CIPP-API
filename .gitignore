@@ -17,12 +17,16 @@ SendNotifications/config.json
 # BMad files
 .agentvibes/
 .bmad/
+_bmad
 .mcp.json
 
 #claude files
 .claude/
 CLAUDE.md
 nul
+
+#Gemini files
+.gemini
 
 #docs files to ignore
 docs/
