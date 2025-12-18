@@ -463,4 +463,111 @@ Describe 'Invoke-ConfluenceExtensionSync' {
             ($result.Errors -join '') | Should Match 'SpaceKey is empty'
         }
     }
+
+    Context 'Extension Enabled Check (Story 10.3)' {
+        It 'Returns early when Enabled is false' {
+            $config = @{ Confluence = @{ Enabled = $false; BaseURL = 'https://test.atlassian.net' } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            # Should not call any sync functions
+            Assert-MockCalled Connect-ConfluenceAPI -Times 0
+            Assert-MockCalled Sync-ConfluenceUserInventory -Times 0
+        }
+
+        It 'Logs skip message when Enabled is false' {
+            $config = @{ Confluence = @{ Enabled = $false; BaseURL = 'https://test.atlassian.net' } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'Sync skipped.*disabled'
+        }
+
+        It 'Returns result object when Enabled is false' {
+            $config = @{ Confluence = @{ Enabled = $false; BaseURL = 'https://test.atlassian.net' } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            $result | Should Not BeNullOrEmpty
+            $result.Users | Should Be 0
+            $result.Devices | Should Be 0
+        }
+
+        It 'Continues sync when Enabled is not specified (defaults to enabled)' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net' } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            Assert-MockCalled Connect-ConfluenceAPI -Times 1
+        }
+
+        It 'Continues sync when Enabled is true' {
+            $config = @{ Confluence = @{ Enabled = $true; BaseURL = 'https://test.atlassian.net' } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            Assert-MockCalled Connect-ConfluenceAPI -Times 1
+        }
+
+        It 'Handles flat config with Enabled false' {
+            $config = @{ Enabled = $false; BaseURL = 'https://test.atlassian.net' }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            Assert-MockCalled Connect-ConfluenceAPI -Times 0
+        }
+    }
+
+    Context 'Sync Skip Logging (Story 10.3)' {
+        It 'Logs skip message when SyncUsers is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncUsers = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'User sync skipped.*disabled'
+        }
+
+        It 'Logs skip message when SyncDevices is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncDevices = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'Device sync skipped.*disabled'
+        }
+
+        It 'Logs skip message when SyncLicenses is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncLicenses = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'License sync skipped.*disabled'
+        }
+
+        It 'Logs skip message when SyncMFA is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncMFA = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'MFA sync skipped.*disabled'
+        }
+
+        It 'Logs skip message when SyncTeams is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncTeams = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'Teams sync skipped.*disabled'
+        }
+
+        It 'Logs skip message when SyncSharePoint is false' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncSharePoint = $false } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'SharePoint sync skipped.*disabled'
+        }
+
+        It 'Logs multiple skip messages when multiple sync types disabled' {
+            $config = @{
+                Confluence = @{
+                    BaseURL       = 'https://test.atlassian.net'
+                    SyncUsers     = $false
+                    SyncDevices   = $false
+                    SyncLicenses  = $false
+                }
+            }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            $logsJoined = $result.Logs -join ''
+            ($logsJoined | Select-String -Pattern 'skipped.*disabled' -AllMatches).Matches.Count | Should BeGreaterThan 2
+        }
+    }
 }

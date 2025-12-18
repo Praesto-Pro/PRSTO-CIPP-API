@@ -103,6 +103,9 @@ function Sync-ConfluenceSharePointInventory {
     $adfContent = ConvertTo-ConfluenceSharePointPage -SharePointData $SharePointData
     Write-Verbose "Generated ADF content for $siteCount site(s)"
 
+    # Generate content hash for change detection (Story 10.4)
+    $newHash = Get-ConfluenceContentHash -Content $adfContent
+
     # Search for existing page using CQL (escape single quotes to prevent CQL injection)
     $escapedSpaceKey = $SpaceKey -replace "'", "''"
     $escapedTitle = $PageTitle -replace "'", "''"
@@ -111,9 +114,27 @@ function Sync-ConfluenceSharePointInventory {
     $existingPage = Search-Confluence -CQL $cql | Select-Object -First 1
 
     if ($existingPage) {
+        # Check cache for change detection (Story 10.4)
+        $cachedEntry = Get-ConfluencePageCache -PageId $existingPage.Id
+        if ($cachedEntry -and $cachedEntry.Hash -eq $newHash) {
+            Write-Verbose "Page '$PageTitle' unchanged, skipping update"
+            return [PSCustomObject]@{
+                Id       = $existingPage.Id
+                Title    = $PageTitle
+                SpaceKey = $SpaceKey
+                Version  = $null
+                Action   = 'Skipped'
+                Message  = 'Page unchanged, skipping update'
+            }
+        }
+
         Write-Verbose "Found existing page (ID: $($existingPage.Id)) - updating"
         if ($PSCmdlet.ShouldProcess($PageTitle, "Update Confluence page")) {
             $result = Set-ConfluencePage -PageId $existingPage.Id -Body $adfContent
+
+            # Update cache after successful update (Story 10.4)
+            Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
+
             Write-Verbose "Successfully updated page '$PageTitle' (ID: $($result.Id), Version: $($result.Version.Number))"
             return [PSCustomObject]@{
                 Id       = $result.Id
@@ -137,6 +158,10 @@ function Sync-ConfluenceSharePointInventory {
                 Write-Verbose "Creating page under parent ID: $ParentPageId"
             }
             $result = New-ConfluencePage @createParams
+
+            # Update cache after successful create (Story 10.4)
+            Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
+
             Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
             return [PSCustomObject]@{
                 Id       = $result.Id

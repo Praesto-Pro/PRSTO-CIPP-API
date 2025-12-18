@@ -72,6 +72,16 @@ function Invoke-ConfluenceExtensionSync {
 
     $CompanyResult.Logs.Add("Starting Confluence Extension Sync for $TenantFilter")
 
+    # Get Confluence-specific configuration (handle nested structure)
+    $confluenceConfig = if ($Configuration.Confluence) { $Configuration.Confluence } else { $Configuration }
+
+    # Check if extension is enabled (AC4: Enabled=$false causes immediate return)
+    if ($confluenceConfig.Enabled -eq $false) {
+        Write-Verbose 'Confluence extension is disabled, skipping sync'
+        $CompanyResult.Logs.Add('Sync skipped: Confluence extension is disabled')
+        return $CompanyResult
+    }
+
     try {
         # Phase 2: Connect to Confluence API
         Write-Verbose 'Connecting to Confluence API'
@@ -123,9 +133,6 @@ function Invoke-ConfluenceExtensionSync {
 
         $CompanyResult.Logs.Add('Loaded cached M365 data')
 
-        # Get Confluence-specific configuration (handle nested structure)
-        $confluenceConfig = if ($Configuration.Confluence) { $Configuration.Confluence } else { $Configuration }
-
         # Phase 5: Sync each enabled data type with error isolation
         # 5a: User Inventory
         if ($confluenceConfig.SyncUsers -ne $false) {
@@ -160,6 +167,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'User sync disabled in configuration'
+            $CompanyResult.Logs.Add('User sync skipped: disabled in configuration')
         }
 
         # 5b: Endpoint/Device Inventory
@@ -185,6 +193,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'Device sync disabled in configuration'
+            $CompanyResult.Logs.Add('Device sync skipped: disabled in configuration')
         }
 
         # 5c: License Report
@@ -219,6 +228,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'License sync disabled in configuration'
+            $CompanyResult.Logs.Add('License sync skipped: disabled in configuration')
         }
 
         # 5d: MFA Report
@@ -243,6 +253,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'MFA sync disabled in configuration'
+            $CompanyResult.Logs.Add('MFA sync skipped: disabled in configuration')
         }
 
         # 5e: Teams Inventory
@@ -270,6 +281,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'Teams sync disabled in configuration'
+            $CompanyResult.Logs.Add('Teams sync skipped: disabled in configuration')
         }
 
         # 5f: SharePoint Inventory
@@ -294,6 +306,7 @@ function Invoke-ConfluenceExtensionSync {
         }
         else {
             Write-Verbose 'SharePoint sync disabled in configuration'
+            $CompanyResult.Logs.Add('SharePoint sync skipped: disabled in configuration')
         }
 
         $CompanyResult.Logs.Add('Confluence Extension Sync completed')
