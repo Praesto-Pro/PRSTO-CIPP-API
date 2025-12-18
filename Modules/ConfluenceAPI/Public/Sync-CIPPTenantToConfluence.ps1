@@ -53,6 +53,8 @@ function Sync-CIPPTenantToConfluence {
         Sync-ConfluenceTeamsInventory
     .LINK
         Sync-ConfluenceSharePointInventory
+    .LINK
+        Get-ConfluenceSyncLog
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     [OutputType([PSCustomObject])]
@@ -262,7 +264,7 @@ function Sync-CIPPTenantToConfluence {
 
     Write-Verbose "Sync completed for tenant '$TenantId': $overallStatus ($successCount succeeded, $failedCount failed, $skippedCount skipped, $unchangedCount unchanged)"
 
-    return [PSCustomObject]@{
+    $resultObject = [PSCustomObject]@{
         TenantId       = $TenantId
         SpaceKey       = $spaceKey
         StartTime      = $startTime.ToString('yyyy-MM-dd HH:mm:ss UTC')
@@ -277,4 +279,10 @@ function Sync-CIPPTenantToConfluence {
         ErrorCount     = $errors.Count
         Errors         = $errors
     }
+
+    # Log the sync execution (Story 9.1 - FR39)
+    # Always log sync execution, including WhatIf runs, for audit trail
+    Add-ConfluenceSyncLog -SyncResult $resultObject
+
+    return $resultObject
 }

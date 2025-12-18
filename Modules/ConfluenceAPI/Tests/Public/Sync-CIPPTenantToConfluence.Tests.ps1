@@ -28,9 +28,11 @@ Describe 'Sync-CIPPTenantToConfluence' {
         . "$privateDir\Get-DataHash.ps1"
         . "$privateDir\Get-SyncStateKey.ps1"
         . "$privateDir\Test-DataChanged.ps1"
+        . "$privateDir\Add-ConfluenceSyncLog.ps1"
 
-        # Initialize sync state cache
+        # Initialize sync state cache and log cache
         $script:SyncStateCache = @{}
+        $script:SyncLogCache = @{}
 
         # Dot-source function under test
         . "$publicDir\Sync-CIPPTenantToConfluence.ps1"
@@ -917,6 +919,142 @@ Describe 'Sync-CIPPTenantToConfluence' {
             # State should not be stored
             $stateKey = 'test|UserInventory'
             $script:SyncStateCache.ContainsKey($stateKey) | Should Be $false
+        }
+    }
+
+    Context 'Sync Execution Logging (Story 9.1)' {
+        BeforeEach {
+            Mock Get-ConfluenceTenantMapping {
+                [PSCustomObject]@{ TenantId = 'test'; SpaceKey = 'TEST'; SpaceName = 'Test' }
+            }
+            Mock Sync-ConfluenceUserInventory { [PSCustomObject]@{ Id = 'user-123'; Title = 'User Inventory' } }
+            Mock Sync-ConfluenceEndpointInventory { [PSCustomObject]@{ Id = 'endpoint-123'; Title = 'Endpoint Inventory' } }
+
+            # Reset log cache for each test
+            $script:SyncLogCache = @{}
+        }
+
+        It 'Calls Add-ConfluenceSyncLog after sync completes' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $script:SyncLogCache.Count | Should Be 1
+        }
+
+        It 'Logs sync result with correct TenantId' {
+            Sync-CIPPTenantToConfluence -TenantId 'my-tenant' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.TenantId | Should Be 'my-tenant'
+        }
+
+        It 'Logs sync result with correct SpaceKey' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.SpaceKey | Should Be 'TEST'
+        }
+
+        It 'Logs sync result with correct OverallStatus' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.OverallStatus | Should Be 'Success'
+        }
+
+        It 'Logs sync result with correct SuccessCount' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Endpoints @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.SuccessCount | Should Be 2
+        }
+
+        It 'Logs sync result with correct FailedCount' {
+            Mock Sync-ConfluenceUserInventory { throw "Error" }
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Endpoints @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.FailedCount | Should Be 1
+        }
+
+        It 'Logs sync result with Duration' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.Duration | Should Match '\d{2}:\d{2}:\d{2}'
+        }
+
+        It 'Logs sync result with SyncResults array' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Endpoints @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            @($logEntry.SyncResults).Count | Should BeGreaterThan 0
+        }
+
+        It 'Logs sync result with Errors array on failure' {
+            Mock Sync-ConfluenceUserInventory { throw "Sync error message" }
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            @($logEntry.Errors).Count | Should Be 1
+            $logEntry.Errors[0].Error | Should Match 'Sync error message'
+        }
+
+        It 'Creates log entry even on WhatIf run' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -WhatIf
+            $script:SyncLogCache.Count | Should Be 1
+        }
+
+        It 'Log entry on WhatIf has WhatIf OverallStatus' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -WhatIf
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.OverallStatus | Should Be 'WhatIf'
+        }
+
+        It 'Multiple syncs create multiple log entries' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $script:SyncLogCache.Count | Should Be 2
+        }
+
+        It 'Each log entry has unique LogId' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logs = @($script:SyncLogCache.Values)
+            $logs[0].LogId | Should Not Be $logs[1].LogId
+        }
+
+        It 'Log entry has Timestamp in UTC format' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.Timestamp | Should Match '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC'
+        }
+
+        It 'Log entry includes SkippedCount' {
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            # 5 data types should be skipped (Endpoints, Licenses, MFA, Teams, SharePoint)
+            $logEntry.SkippedCount | Should Be 5
+        }
+
+        It 'Log entry includes UnchangedCount' {
+            Mock Get-ConfluenceSyncConfiguration {
+                [PSCustomObject]@{
+                    RetryAttempts         = 3
+                    RetryDelaySeconds     = 1
+                    EnableIncrementalSync = $true
+                }
+            }
+
+            $users = @([PSCustomObject]@{ Name = 'Test' })
+
+            # First sync
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $script:SyncLogCache = @{}
+
+            # Second sync (unchanged)
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users $users
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.UnchangedCount | Should Be 1
+        }
+
+        It 'Log entry includes ErrorCount' {
+            Mock Sync-ConfluenceUserInventory { throw "Error 1" }
+            Mock Sync-ConfluenceEndpointInventory { throw "Error 2" }
+
+            Sync-CIPPTenantToConfluence -TenantId 'test' -Users @() -Endpoints @()
+            $logEntry = $script:SyncLogCache.Values | Select-Object -First 1
+            $logEntry.ErrorCount | Should Be 2
         }
     }
 }

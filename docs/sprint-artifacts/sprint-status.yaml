@@ -100,11 +100,11 @@ development_status:
   8-2-sync-configuration: done
   8-3-retry-logic-error-recovery: done
   8-4-incremental-sync-support: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: completed
 
   # Epic 9: Monitoring & Observability
-  epic-9: backlog
-  9-1-sync-execution-logging: backlog
-  9-2-sync-status-dashboard: backlog
+  epic-9: in-progress
+  9-1-sync-execution-logging: done
+  9-2-sync-status-dashboard: ready-for-dev
   9-3-error-reporting-troubleshooting: backlog
   epic-9-retrospective: optional
