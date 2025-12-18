@@ -9,7 +9,7 @@ Logs
 ExcludedTenants
 SendNotifications/config.json
 .env
-
+index.md
 
 # Cursor IDE
 .cursor/rules
@@ -33,3 +33,4 @@ nul
 #scripts files to ignore
 scripts/
 package-lock.json
+
