@@ -62,7 +62,8 @@
         'Clear-ConfluenceSyncState',
         # Sync Logging (Epic 9)
         'Get-ConfluenceSyncLog',
-        'Clear-ConfluenceSyncLog'
+        'Clear-ConfluenceSyncLog',
+        'Get-ConfluenceSyncStatus'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
