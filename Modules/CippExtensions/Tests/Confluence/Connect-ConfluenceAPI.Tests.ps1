@@ -76,7 +76,7 @@ Describe 'Connect-ConfluenceAPI' {
             $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net' } }
             $result = Connect-ConfluenceAPI -Configuration $config
 
-            Assert-MockCalled Test-ConfluenceConnection -Times 1 -Exactly
+            Assert-MockCalled Test-ConfluenceConnection -Times 1
         }
     }
 

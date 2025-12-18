@@ -14,6 +14,25 @@ function Connect-ConfluenceAPI {
         5. Returns connection status object
 
         Follows the Connect-HuduAPI pattern from CippExtensions.
+
+        Credential Storage (Story 10.5):
+
+        Production:
+        - API key retrieved from Azure Key Vault using managed identity
+        - Secret name: 'Confluence'
+        - Cached in $env:Ext_Confluence for performance
+        - Set up: az keyvault secret set --vault-name <vault> --name Confluence --value <token>
+
+        Development:
+        - API key retrieved from DevSecrets table
+        - PartitionKey/RowKey: 'Confluence'
+        - Triggered by $env:AzureWebJobsStorage = 'UseDevelopmentStorage=true'
+
+        Token Rotation:
+        - Update Key Vault secret (az keyvault secret set ...)
+        - Environment cache clears automatically on Azure Function worker recycling
+        - No manual intervention needed for gradual rollout
+        - Clear cache manually if needed: Remove-Item "env:Ext_Confluence"
     .PARAMETER Configuration
         Extension configuration from Extensionsconfig table.
         Expected structure:
@@ -26,8 +45,44 @@ function Connect-ConfluenceAPI {
         if ($result.Success) {
             # Connection successful, ConfluenceAPI module is ready
         }
+    .EXAMPLE
+        # Production setup - Set Key Vault secret
+        az keyvault secret set --vault-name mykeyvault --name Confluence --value <your-api-token>
+
+        # Grant Function App access
+        az keyvault set-policy --name mykeyvault --object-id <function-identity-id> --secret-permissions get
+
+        # Test connection
+        $config = @{ Confluence = @{ BaseURL = 'https://yoursite.atlassian.net' } }
+        $result = Connect-ConfluenceAPI -Configuration $config
+    .EXAMPLE
+        # Development setup - Add to DevSecrets table
+        $Table = Get-CIPPTable -tablename 'DevSecrets'
+        $Entity = @{
+            PartitionKey = 'Confluence'
+            RowKey       = 'Confluence'
+            APIKey       = 'your-dev-api-token'
+        }
+        Add-CIPPAzDataTableEntity @Table -Entity $Entity -Force
+
+        # Set development environment
+        $env:AzureWebJobsStorage = 'UseDevelopmentStorage=true'
+
+        # Test connection
+        $config = @{ BaseURL = 'https://dev.atlassian.net' }
+        $result = Connect-ConfluenceAPI -Configuration $config
+    .EXAMPLE
+        # Token rotation procedure
+        # 1. Generate new token at https://id.atlassian.com/manage/api-tokens
+        # 2. Update Key Vault
+        az keyvault secret set --vault-name mykeyvault --name Confluence --value <new-token>
+        # 3. Optional: Clear cache for immediate effect
+        Remove-Item "env:Ext_Confluence" -ErrorAction SilentlyContinue
+        # 4. Verify
+        $result = Connect-ConfluenceAPI -Configuration $Config
     .NOTES
         Part of Story 10.1 - Extension Sync Orchestrator.
+        Enhanced in Story 10.5 - API Key Framework Integration.
 
         This function is located in CippExtensions because it integrates with
         CIPP's credential management (Get-ExtensionAPIKey).
@@ -37,6 +92,12 @@ function Connect-ConfluenceAPI {
         - New-ConfluenceAPIKey (ConfluenceAPI module)
         - New-ConfluenceBaseURL (ConfluenceAPI module)
         - Test-ConfluenceConnection (ConfluenceAPI module)
+
+        Security:
+        - API tokens never logged or displayed in verbose output
+        - Managed identity for production Key Vault access (no credentials)
+        - Environment caching reduces Key Vault calls for performance
+        - Token rotation supported without downtime
     .LINK
         Get-ExtensionAPIKey
     .LINK

@@ -114,6 +114,6 @@ development_status:
   10-1-extension-sync-orchestrator: done
   10-2-scheduled-task-registration: done
   10-3-configuration-management: done
-  10-4-cache-integration: review
-  10-5-api-key-framework-integration: backlog
+  10-4-cache-integration: done
+  10-5-api-key-framework-integration: review
   epic-10-retrospective: optional

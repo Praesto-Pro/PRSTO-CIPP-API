@@ -42,9 +42,10 @@ function Set-ConfluencePageCache {
 
     Write-Verbose "Updating cache for page '$PageId' (SpaceKey: $SpaceKey)"
 
-    if ($PSCmdlet.ShouldProcess("Page '$PageId'", 'Update cache entry')) {
-        $Table = Get-CIPPTable -TableName 'CacheConfluencePages'
+    # Get table reference outside ShouldProcess (read operation)
+    $Table = Get-CIPPTable -TableName 'CacheConfluencePages'
 
+    if ($PSCmdlet.ShouldProcess("Page '$PageId'", 'Update cache entry')) {
         $Entity = @{
             PartitionKey = 'ConfluencePage'
             RowKey       = $PageId

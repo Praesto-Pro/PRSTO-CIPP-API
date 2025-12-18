@@ -49,6 +49,7 @@ function Clear-ConfluencePageCache {
 
     if ($PSCmdlet.ShouldProcess("$EntityCount cache entries$SpaceInfo", 'Remove')) {
         foreach ($Entity in $Entities) {
+            # Note: -Force used for batch operations without additional confirmations
             Remove-AzDataTableEntity @Table -Entity $Entity -Force
         }
         Write-Verbose "Removed $EntityCount cache entries$SpaceInfo"

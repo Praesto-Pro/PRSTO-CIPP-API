@@ -120,9 +120,9 @@ function Sync-ConfluenceMFAReport {
             Write-Verbose "Page '$PageTitle' unchanged, skipping update"
             return [PSCustomObject]@{
                 Id       = $existingPage.Id
-                Title    = $PageTitle
+                Title    = $existingPage.Title
                 SpaceKey = $SpaceKey
-                Version  = $null
+                Version  = if ($existingPage.Version.Number) { $existingPage.Version.Number } else { $null }
                 Action   = 'Skipped'
                 Message  = 'Page unchanged, skipping update'
             }
