@@ -110,9 +110,9 @@ development_status:
   epic-9-retrospective: completed
 
   # Epic 10: CIPP Extension Framework Integration
-  epic-10: backlog
-  10-1-extension-sync-orchestrator: backlog
-  10-2-scheduled-task-registration: backlog
+  epic-10: in-progress
+  10-1-extension-sync-orchestrator: done
+  10-2-scheduled-task-registration: done
   10-3-configuration-management: backlog
   10-4-cache-integration: backlog
   10-5-api-key-framework-integration: backlog
