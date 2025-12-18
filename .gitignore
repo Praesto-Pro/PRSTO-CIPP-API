@@ -24,6 +24,9 @@ SendNotifications/config.json
 CLAUDE.md
 nul
 
+#Gemini files
+.gemini
+
 #docs files to ignore
 #docs/
 
