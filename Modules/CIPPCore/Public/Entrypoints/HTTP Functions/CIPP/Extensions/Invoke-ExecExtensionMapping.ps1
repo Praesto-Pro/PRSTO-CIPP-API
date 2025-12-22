@@ -152,7 +152,49 @@ Function Invoke-ExecExtensionMapping {
           Write-Host "Started permissions orchestration with ID = '$InstanceId'"
           $Result = 'AutoMapping Request has been queued. Exact name matches will appear first and matches on device names and serials will take longer. Please check the CIPP Logbook and refresh the page once complete.'
         }
+        'Confluence' {
+          # Get configuration and connect to Confluence API
+          $ConfigTable = Get-CIPPTable -TableName Extensionsconfig
+          $Configuration = (Get-CIPPAzDataTableEntity @ConfigTable).config | ConvertFrom-Json -ErrorAction Stop
+          $ConnectionResult = Connect-ConfluenceAPI -Configuration $Configuration
+          if (-not $ConnectionResult -or -not $ConnectionResult.Success) {
+            throw 'Failed to connect to Confluence API'
+          }
 
+          # Get all Confluence spaces and CIPP tenants
+          $Spaces = Get-ConfluenceSpace
+          $Tenants = Get-Tenants -IncludeErrors
+          $ExistingMappings = Get-ExtensionMapping -Extension 'Confluence'
+          $MappedTenantIds = @($ExistingMappings | ForEach-Object { $_.RowKey })
+
+          # Auto-map by matching tenant displayName to space name (case-insensitive)
+          $AutoMappedCount = 0
+          foreach ($Tenant in $Tenants) {
+            # Skip already mapped tenants
+            if ($Tenant.RowKey -in $MappedTenantIds) { continue }
+
+            # Try to find matching space by name
+            $MatchingSpace = $Spaces | Where-Object {
+              $_.Name -eq $Tenant.displayName -or
+              $_.Name -like "*$($Tenant.displayName)*" -or
+              $Tenant.displayName -like "*$($_.Name)*"
+            } | Select-Object -First 1
+
+            if ($MatchingSpace) {
+              # Create mapping
+              $AddObject = @{
+                PartitionKey    = 'ConfluenceMapping'
+                RowKey          = $Tenant.RowKey
+                IntegrationId   = $MatchingSpace.Key
+                IntegrationName = $MatchingSpace.Name
+              }
+              Add-CIPPAzDataTableEntity @Table -Entity $AddObject -Force
+              Write-LogMessage -API $APIName -headers $Headers -message "Auto-mapped $($Tenant.displayName) to Confluence space $($MatchingSpace.Name)" -Sev 'Info'
+              $AutoMappedCount++
+            }
+          }
+          $Result = "AutoMapping complete. Matched $AutoMappedCount tenant(s) to Confluence spaces. Refresh the page to see results."
+        }
       }
     }
     $StatusCode = [HttpStatusCode]::OK
