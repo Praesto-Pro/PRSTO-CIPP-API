@@ -48,6 +48,37 @@ Function Invoke-ExecExtensionMapping {
           'Accounts' = $Accounts
         }
       }
+      'Confluence' {
+        $Mappings = Get-ConfluenceMapping
+        $Result = @{
+          'Mappings' = @($Mappings)
+        }
+      }
+      'ConfluenceFields' {
+        try {
+          # Get all available Confluence spaces
+          $Spaces = Get-ConfluenceSpace
+
+          # Transform to the format expected by the frontend
+          # Note: Frontend expects "Companies" key for all integrations
+          $SpacesList = $Spaces | ForEach-Object {
+            [PSCustomObject]@{
+              name  = $_.Name
+              value = $_.Key
+            }
+          }
+
+          $Result = @{
+            'Companies' = $SpacesList
+          }
+        }
+        catch {
+          Write-LogMessage -API 'ExecExtensionMapping' -message "Failed to get Confluence spaces: $($_.Exception.Message)" -Sev 'Error'
+          $Result = @{
+            'Companies' = @()
+          }
+        }
+      }
     }
   }
 
@@ -74,6 +105,10 @@ Function Invoke-ExecExtensionMapping {
         }
         'HuduFields' {
           $Result = Set-ExtensionFieldMapping -CIPPMapping $Table -APIName $APIName -Request $Request -Extension 'Hudu'
+          Register-CIPPExtensionScheduledTasks
+        }
+        'Confluence' {
+          $Result = Set-ConfluenceMapping -CIPPMapping $Table -APIName $APIName -Request $Request
           Register-CIPPExtensionScheduledTasks
         }
       }
