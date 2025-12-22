@@ -48,11 +48,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$|^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$', ErrorMessage = 'TestTenantId must be a valid GUID or domain name')]
+    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$|^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$')]
     [string]$TestTenantId,
 
     [Parameter(Mandatory = $false)]
-    [ValidatePattern('^[a-zA-Z0-9]+$', ErrorMessage = 'TestSpaceKey must contain only letters and numbers')]
+    [ValidatePattern('^[a-zA-Z0-9]+$')]
     [string]$TestSpaceKey = 'CIPPTESTSPACE',
 
     [Parameter(Mandatory = $false)]
