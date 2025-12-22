@@ -53,9 +53,10 @@ Function Invoke-ExecExtensionMapping {
         $Mappings = Get-ConfluenceMapping
 
         # Get configuration and connect to Confluence API
-        $Table = Get-CIPPTable -TableName Extensionsconfig
+        # Use different variable name to avoid overwriting $Table (CippMapping)
+        $ExtConfigTable = Get-CIPPTable -TableName Extensionsconfig
         try {
-          $Configuration = (Get-CIPPAzDataTableEntity @Table).config | ConvertFrom-Json -ErrorAction Stop
+          $Configuration = (Get-CIPPAzDataTableEntity @ExtConfigTable).config | ConvertFrom-Json -ErrorAction Stop
 
           # Connect to Confluence API using extension credentials
           $ConnectionResult = Connect-ConfluenceAPI -Configuration $Configuration
@@ -167,6 +168,9 @@ Function Invoke-ExecExtensionMapping {
           $ExistingMappings = Get-ExtensionMapping -Extension 'Confluence'
           $MappedTenantIds = @($ExistingMappings | ForEach-Object { $_.RowKey })
 
+          # Ensure we use CippMapping table for storing mappings
+          $MappingTable = Get-CIPPTable -TableName CippMapping
+
           # Auto-map by matching tenant displayName to space name (case-insensitive)
           $AutoMappedCount = 0
           foreach ($Tenant in $Tenants) {
@@ -181,14 +185,14 @@ Function Invoke-ExecExtensionMapping {
             } | Select-Object -First 1
 
             if ($MatchingSpace) {
-              # Create mapping
+              # Create mapping in CippMapping table
               $AddObject = @{
                 PartitionKey    = 'ConfluenceMapping'
                 RowKey          = $Tenant.RowKey
                 IntegrationId   = $MatchingSpace.Key
                 IntegrationName = $MatchingSpace.Name
               }
-              Add-CIPPAzDataTableEntity @Table -Entity $AddObject -Force
+              Add-CIPPAzDataTableEntity @MappingTable -Entity $AddObject -Force
               Write-LogMessage -API $APIName -headers $Headers -message "Auto-mapped $($Tenant.displayName) to Confluence space $($MatchingSpace.Name)" -Sev 'Info'
               $AutoMappedCount++
             }
