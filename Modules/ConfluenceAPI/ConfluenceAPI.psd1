@@ -14,6 +14,8 @@
         'New-ConfluenceAPIKey',
         'Get-ConfluenceAPIKey',
         'Remove-ConfluenceAPIKey',
+        # User Email Management (required for Basic Auth)
+        'New-ConfluenceUserEmail',
         # Base URL Management (Epic 1)
         'New-ConfluenceBaseURL',
         'Get-ConfluenceBaseURL',

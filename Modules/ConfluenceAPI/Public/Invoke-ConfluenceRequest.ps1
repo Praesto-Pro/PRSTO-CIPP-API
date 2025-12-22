@@ -64,6 +64,19 @@ function Invoke-ConfluenceRequest {
         )
     }
 
+    if (-not $script:ConfluenceUserEmail) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.InvalidOperationException]::new(
+                    "User email not configured. Run New-ConfluenceUserEmail first."
+                ),
+                "CredentialsNotConfigured",
+                [System.Management.Automation.ErrorCategory]::AuthenticationError,
+                $null
+            )
+        )
+    }
+
     if (-not $script:ConfluenceBaseURL) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
@@ -77,9 +90,9 @@ function Invoke-ConfluenceRequest {
         )
     }
 
-    # Prepare Basic Auth header (token-only format from Story 1.4)
+    # Prepare Basic Auth header (email:api_token format for Confluence Cloud)
     $base64Auth = [System.Convert]::ToBase64String(
-        [System.Text.Encoding]::ASCII.GetBytes(":$($script:ConfluenceAPIKey)")
+        [System.Text.Encoding]::ASCII.GetBytes("$($script:ConfluenceUserEmail):$($script:ConfluenceAPIKey)")
     )
     $headers = @{
         "Authorization" = "Basic $base64Auth"

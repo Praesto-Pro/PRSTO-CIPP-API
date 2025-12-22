@@ -59,8 +59,9 @@ Function Invoke-ExecExtensionMapping {
 
           # Connect to Confluence API using extension credentials
           $ConnectionResult = Connect-ConfluenceAPI -Configuration $Configuration
-          if (-not $ConnectionResult.Success) {
-            throw $ConnectionResult.Error
+          if (-not $ConnectionResult -or -not $ConnectionResult.Success) {
+            $errorMsg = if ($ConnectionResult -and $ConnectionResult.Error) { $ConnectionResult.Error } else { 'Connection failed - check configuration' }
+            throw $errorMsg
           }
 
           # Get available spaces for dropdown

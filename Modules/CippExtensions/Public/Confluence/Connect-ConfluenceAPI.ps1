@@ -144,12 +144,32 @@ function Connect-ConfluenceAPI {
             }
         }
 
+        # Extract UserEmail from configuration (required for Basic Auth)
+        $UserEmail = if ($Configuration.Confluence.UserEmail) {
+            $Configuration.Confluence.UserEmail
+        }
+        elseif ($Configuration.UserEmail) {
+            $Configuration.UserEmail
+        }
+        else {
+            $null
+        }
+
+        if (-not $UserEmail) {
+            Write-Verbose 'No UserEmail found in configuration'
+            return [PSCustomObject]@{
+                Success = $false
+                Error   = 'Confluence UserEmail not configured. Set via CIPP Settings > Extensions > Confluence.'
+            }
+        }
+
         Write-Verbose "Initializing ConfluenceAPI module with BaseURL: $BaseURL"
 
         # Initialize ConfluenceAPI module credentials
         # These functions store credentials in script-scope variables
         New-ConfluenceAPIKey -ApiKey $APIKey
         New-ConfluenceBaseURL -BaseURL $BaseURL
+        New-ConfluenceUserEmail -Email $UserEmail
 
         # Validate connection
         Write-Verbose 'Validating Confluence connection'
