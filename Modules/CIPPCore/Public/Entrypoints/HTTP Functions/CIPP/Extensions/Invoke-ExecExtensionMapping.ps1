@@ -52,8 +52,18 @@ Function Invoke-ExecExtensionMapping {
         # Get existing mappings
         $Mappings = Get-ConfluenceMapping
 
-        # Get available spaces for dropdown
+        # Get configuration and connect to Confluence API
+        $Table = Get-CIPPTable -TableName Extensionsconfig
         try {
+          $Configuration = (Get-CIPPAzDataTableEntity @Table).config | ConvertFrom-Json -ErrorAction Stop
+
+          # Connect to Confluence API using extension credentials
+          $ConnectionResult = Connect-ConfluenceAPI -Configuration $Configuration
+          if (-not $ConnectionResult.Success) {
+            throw $ConnectionResult.Error
+          }
+
+          # Get available spaces for dropdown
           $Spaces = Get-ConfluenceSpace
           $SpacesList = $Spaces | ForEach-Object {
             [PSCustomObject]@{
@@ -63,14 +73,19 @@ Function Invoke-ExecExtensionMapping {
           }
         }
         catch {
-          Write-LogMessage -API 'ExecExtensionMapping' -message "Failed to get Confluence spaces: $($_.Exception.Message)" -Sev 'Error'
-          $SpacesList = @()
+          $Message = if ($_.ErrorDetails.Message) {
+            Get-NormalizedError -Message $_.ErrorDetails.Message
+          } else {
+            $_.Exception.Message
+          }
+          Write-LogMessage -API 'ExecExtensionMapping' -message "Failed to get Confluence spaces: $Message" -Sev 'Error'
+          $SpacesList = @(@{name = "Could not get Confluence spaces: $Message"; value = '-1' })
         }
 
         # Return both mappings and available spaces
         $Result = @{
           'Mappings'  = @($Mappings)
-          'Companies' = $SpacesList
+          'Companies' = @($SpacesList)
         }
       }
     }
