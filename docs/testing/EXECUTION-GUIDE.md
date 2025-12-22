@@ -8,13 +8,23 @@
 
 ## Important Notice
 
-**This story requires MANUAL execution by a QA engineer with access to a live CIPP and Confluence environment.**
+**⚠️ CRITICAL CONSTRAINT: Azure Function Apps cannot execute ad-hoc PowerShell scripts**
+
+This story requires **manual execution from a local PowerShell environment** with connectivity to:
+- Azure Function App (CIPP instance)
+- Confluence Cloud API
+- Azure Table Storage
+
+**Why the test scripts can't run in Function Apps:**
+- Function Apps execute specific function triggers (HTTP, timer, queue)
+- Ad-hoc scripts require local PowerShell 5.1/7+ environment
+- Test scripts need interactive execution with user validation
 
 The dev agent (Claude) has completed **Task 1: Prepare Live Test Environment** by creating the comprehensive testing framework. However, **Tasks 2-8 cannot be automated** because they require:
 
-1. Access to a real CIPP Function App instance
-2. Access to a real Confluence Cloud instance
-3. Access to Azure Table Storage with live M365 tenant data
+1. **Local PowerShell environment** with CIPP module imports
+2. Access to Azure Function App's storage tables (remote connection)
+3. Access to Confluence Cloud API (remote connection)
 4. Manual evidence collection (screenshots of Confluence pages)
 5. Analysis of live test results
 
@@ -38,44 +48,80 @@ The following test framework components are ready for use:
 
 ### Prerequisites
 
+**Execution Environment:**
+- **Local PowerShell 5.1 or 7+** (NOT Azure Function App)
+- CIPP modules imported locally
+- Network connectivity to Azure resources
+
 Before executing live tests, you need:
 
-1. **CIPP Instance Access**
-   - Real CIPP Function App (not local dev environment)
-   - Test tenant configured in CIPP
-   - CacheExtensionSync table populated with M365 data for test tenant
-   - CIPP framework modules available (Get-ExtensionAPIKey, Get-ExtensionCacheData, Get-CIPPTable)
+1. **Local Development Environment**
+   - Clone CIPP-API repository locally
+   - Import ConfluenceAPI module: `Import-Module .\Modules\ConfluenceAPI\ConfluenceAPI.psd1`
+   - Import CippExtensions module: `Import-Module .\Modules\CippExtensions\CippExtensions.psd1`
+   - PowerShell 5.1 or 7+ installed
 
-2. **Confluence Instance Access**
-   - Confluence Cloud instance (your organization's instance OR Atlassian trial)
+2. **Azure Table Storage Access** (Remote Connection)
+   - Connection string or SAS token for CIPP storage account
+   - Access to tables:
+     - CacheExtensionSync (M365 data cache with test tenant data)
+     - CippMapping (Tenant → Space mapping)
+     - Extensionsconfig (Confluence configuration)
+     - CacheConfluencePages (MD5 hash cache)
+   - Network connectivity from local machine to Azure Storage
+
+3. **Confluence Cloud API Access** (Remote Connection)
+   - Confluence Cloud instance (your org OR Atlassian trial)
    - Test space created (recommended: `CIPPTESTSPACE`)
-   - API token with required permissions:
-     - `write:confluence-content`
-     - `write:confluence-space`
-     - `read:confluence-content`
-   - API token stored in Azure Key Vault (prod) or DevSecrets table (dev)
+   - API token with permissions: write:confluence-content, write:confluence-space, read:confluence-content
+   - API token stored in:
+     - Azure Key Vault (production) - requires local Azure authentication
+     - DevSecrets table (development) - requires table access
+   - Network connectivity from local machine to Confluence Cloud
 
-3. **Azure Table Storage Access**
-   - CacheExtensionSync - M365 data cache (test tenant data required)
-   - CippMapping - Tenant mapping (test tenant → test space mapping required)
-   - Extensionsconfig - Extension config (Confluence BaseURL required)
-   - CacheConfluencePages - Page cache (for change detection testing)
+4. **Test Data in Azure Storage**
+   - Test tenant configured in CIPP
+   - CacheExtensionSync populated with M365 data:
+     - 10+ licensed users with mailboxes and OneDrive
+     - 10+ Intune devices with varied compliance statuses
+     - Multiple license SKUs with assignments
+     - MFA-enabled and non-MFA users
+     - 5+ Teams with membership
+     - 5+ SharePoint sites
 
-4. **Test Data Requirements**
-   - 10+ licensed users with mailboxes and OneDrive
-   - 10+ Intune devices with varied compliance statuses
-   - Multiple license SKUs with assignments
-   - MFA-enabled and non-MFA users
-   - 5+ Teams with membership
-   - 5+ SharePoint sites
+### Option 1: Execute Tests from Local Machine (Recommended)
 
-### Option 1: Execute Tests Yourself (Recommended if you have access)
+**Prerequisites:**
+- Local PowerShell environment with CIPP modules
+- Azure Storage connection (connection string or managed identity)
+- Confluence API token
+- Test tenant data populated in CacheExtensionSync
 
-If you have access to the required environments:
-
-**Step 1: Validate Environment**
+**Step 1: Setup Local Environment**
 ```powershell
+# Navigate to CIPP-API repository
 cd C:\Dev\PRSTO-CIPP-API
+
+# Import required modules
+Import-Module .\Modules\ConfluenceAPI\ConfluenceAPI.psd1 -Force
+Import-Module .\Modules\CippExtensions\CippExtensions.psd1 -Force
+
+# Verify module import
+Get-Command -Module ConfluenceAPI
+Get-Command -Module CippExtensions
+```
+
+**Step 2: Configure Azure Storage Connection**
+```powershell
+# Set environment variable for Azure Storage connection
+$env:AzureWebJobsStorage = "YOUR-CONNECTION-STRING"
+
+# OR authenticate with Azure for managed identity
+Connect-AzAccount
+```
+
+**Step 3: Validate Environment**
+```powershell
 .\docs\testing\scripts\Test-LiveIntegrationEnvironment.ps1 `
     -TestTenantId 'YOUR-TENANT-ID' `
     -TestSpaceKey 'CIPPTESTSPACE'
