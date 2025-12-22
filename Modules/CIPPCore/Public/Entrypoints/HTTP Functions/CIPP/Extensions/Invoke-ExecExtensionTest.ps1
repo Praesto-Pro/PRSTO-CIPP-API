@@ -91,12 +91,18 @@ Function Invoke-ExecExtensionTest {
             }
             'Confluence' {
                 try {
-                    # Test Confluence connection by getting current user info
-                    $currentUser = Get-ConfluenceCurrentUser
-                    if ($currentUser -and $currentUser.email) {
-                        $Results = [pscustomobject]@{'Results' = "Successfully connected to Confluence as: $($currentUser.displayName) ($($currentUser.email))" }
+                    # Test Confluence connection using Connect-ConfluenceAPI
+                    $connection = Connect-ConfluenceAPI -Configuration $Configuration
+                    if ($connection.Success) {
+                        # Get connection test results
+                        $testResult = Test-ConfluenceConnection
+                        if ($testResult.ConnectionStatus) {
+                            $Results = [pscustomobject]@{'Results' = "Successfully connected to Confluence at: $($testResult.BaseURL)" }
+                        } else {
+                            $Results = [pscustomobject]@{'Results' = "Connection test failed: $($testResult.Message)" }
+                        }
                     } else {
-                        $Results = [pscustomobject]@{'Results' = 'Connected to Confluence but could not retrieve user information' }
+                        $Results = [pscustomobject]@{'Results' = "Failed to connect to Confluence: $($connection.Error)" }
                     }
                 } catch {
                     $Results = [pscustomobject]@{'Results' = "Failed to connect to Confluence: $($_.Exception.Message)" }
