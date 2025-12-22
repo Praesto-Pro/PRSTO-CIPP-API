@@ -107,7 +107,7 @@ function Connect-ConfluenceAPI {
     [OutputType([PSCustomObject])]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Configuration
+        $Configuration
     )
 
     Write-Verbose 'Connecting to Confluence API via extension framework'
@@ -155,7 +155,7 @@ function Connect-ConfluenceAPI {
         Write-Verbose 'Validating Confluence connection'
         $Connection = Test-ConfluenceConnection
 
-        if ($Connection -and $Connection.Success) {
+        if ($Connection -and $Connection.ConnectionStatus) {
             Write-Verbose 'Confluence connection validated successfully'
             return [PSCustomObject]@{
                 Success = $true
@@ -163,7 +163,7 @@ function Connect-ConfluenceAPI {
             }
         }
         else {
-            $errorMsg = if ($Connection -and $Connection.Error) { $Connection.Error } else { 'Connection test failed' }
+            $errorMsg = if ($Connection -and $Connection.Message) { $Connection.Message } else { 'Connection test failed' }
             Write-Verbose "Connection validation failed: $errorMsg"
             return [PSCustomObject]@{
                 Success = $false
