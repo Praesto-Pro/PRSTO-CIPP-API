@@ -49,34 +49,28 @@ Function Invoke-ExecExtensionMapping {
         }
       }
       'Confluence' {
+        # Get existing mappings
         $Mappings = Get-ConfluenceMapping
-        $Result = @{
-          'Mappings' = @($Mappings)
-        }
-      }
-      'ConfluenceFields' {
-        try {
-          # Get all available Confluence spaces
-          $Spaces = Get-ConfluenceSpace
 
-          # Transform to the format expected by the frontend
-          # Note: Frontend expects "Companies" key for all integrations
+        # Get available spaces for dropdown
+        try {
+          $Spaces = Get-ConfluenceSpace
           $SpacesList = $Spaces | ForEach-Object {
             [PSCustomObject]@{
               name  = $_.Name
               value = $_.Key
             }
           }
-
-          $Result = @{
-            'Companies' = $SpacesList
-          }
         }
         catch {
           Write-LogMessage -API 'ExecExtensionMapping' -message "Failed to get Confluence spaces: $($_.Exception.Message)" -Sev 'Error'
-          $Result = @{
-            'Companies' = @()
-          }
+          $SpacesList = @()
+        }
+
+        # Return both mappings and available spaces
+        $Result = @{
+          'Mappings'  = @($Mappings)
+          'Companies' = $SpacesList
         }
       }
     }
