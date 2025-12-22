@@ -89,6 +89,19 @@ Function Invoke-ExecExtensionTest {
                     $Results = [pscustomobject]@{ 'Results' = 'Failed to connect to GitHub. Check your API credentials and try again.' }
                 }
             }
+            'Confluence' {
+                try {
+                    # Test Confluence connection by getting current user info
+                    $currentUser = Get-ConfluenceCurrentUser
+                    if ($currentUser -and $currentUser.email) {
+                        $Results = [pscustomobject]@{'Results' = "Successfully connected to Confluence as: $($currentUser.displayName) ($($currentUser.email))" }
+                    } else {
+                        $Results = [pscustomobject]@{'Results' = 'Connected to Confluence but could not retrieve user information' }
+                    }
+                } catch {
+                    $Results = [pscustomobject]@{'Results' = "Failed to connect to Confluence: $($_.Exception.Message)" }
+                }
+            }
         }
     } catch {
         $Results = [pscustomobject]@{'Results' = "Failed to connect: $($_.Exception.Message). Line $($_.InvocationInfo.ScriptLineNumber)" }
