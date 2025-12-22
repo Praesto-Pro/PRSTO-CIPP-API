@@ -44,6 +44,19 @@ function Test-ConfluenceConnection {
         )
     }
 
+    if (-not $script:ConfluenceUserEmail) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.InvalidOperationException]::new(
+                    "User email not configured. Run New-ConfluenceUserEmail first."
+                ),
+                "CredentialsNotConfigured",
+                [System.Management.Automation.ErrorCategory]::AuthenticationError,
+                $null
+            )
+        )
+    }
+
     if (-not $script:ConfluenceBaseURL) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
@@ -61,11 +74,9 @@ function Test-ConfluenceConnection {
     $uri = "$script:ConfluenceBaseURL/wiki/api/v2/spaces?limit=1"
     Write-Verbose "Connecting to: $uri"
 
-    # Prepare Basic Auth header
-    # Note: Atlassian uses email:token format, but we store only token
-    # Using token-only auth with empty username prefix
+    # Prepare Basic Auth header (email:api_token format for Confluence Cloud)
     $base64Auth = [System.Convert]::ToBase64String(
-        [System.Text.Encoding]::ASCII.GetBytes(":$($script:ConfluenceAPIKey)")
+        [System.Text.Encoding]::ASCII.GetBytes("$($script:ConfluenceUserEmail):$($script:ConfluenceAPIKey)")
     )
     $headers = @{
         "Authorization" = "Basic $base64Auth"
