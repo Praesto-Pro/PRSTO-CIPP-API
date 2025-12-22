@@ -9,20 +9,20 @@ function Get-ConfluenceMapping {
         Mappings are stored with:
         - PartitionKey: 'ConfluenceMapping'
         - RowKey: TenantId (tenant's defaultDomainName or customerId)
-        - SpaceKey: Confluence space key
-        - SpaceName: Confluence space display name
+        - IntegrationId: Confluence space key
+        - IntegrationName: Confluence space display name
 
         This function follows the Get-HuduMapping pattern from CippExtensions,
-        simplified since Confluence uses space keys rather than company IDs.
+        joining mapping data with tenant information for display.
     .OUTPUTS
-        [PSCustomObject[]] - Array of mapping objects with TenantId, SpaceKey, SpaceName properties
+        [PSCustomObject[]] - Array of mapping objects matching Hudu pattern
     .EXAMPLE
         $mappings = Get-ConfluenceMapping
-        $mappings | Where-Object { $_.RowKey -eq 'contoso.onmicrosoft.com' }
+        $mappings | Where-Object { $_.TenantDomain -eq 'contoso.onmicrosoft.com' }
 
         Retrieves all Confluence mappings and filters to a specific tenant.
     .EXAMPLE
-        Get-ConfluenceMapping | Format-Table TenantId, SpaceKey, SpaceName
+        Get-ConfluenceMapping | Format-Table Tenant, IntegrationName
 
         Lists all configured tenant-to-space mappings.
     .NOTES
@@ -34,13 +34,12 @@ function Get-ConfluenceMapping {
         Table Schema:
         - PartitionKey: 'ConfluenceMapping'
         - RowKey: Tenant identifier (defaultDomainName recommended)
-        - SpaceKey: Confluence space key (e.g., 'CONTOSO')
-        - SpaceName: Human-readable space name (e.g., 'Contoso Corp')
+        - IntegrationId: Confluence space key (e.g., 'CONTOSO')
+        - IntegrationName: Human-readable space name (e.g., 'Contoso Corp')
 
         Dependencies:
         - Get-ExtensionMapping (CIPP framework)
-        - Get-CIPPTable (CIPP framework)
-        - Get-CIPPAzDataTableEntity (CIPP framework)
+        - Get-Tenants (CIPP framework)
     .LINK
         Set-ConfluenceMapping
     .LINK
@@ -53,25 +52,32 @@ function Get-ConfluenceMapping {
     Write-Verbose 'Retrieving Confluence tenant mappings from CippMapping table'
 
     try {
-        # Use the standard extension mapping pattern
-        $mappings = Get-ExtensionMapping -Extension 'Confluence'
+        # Use the standard extension mapping pattern (follows Hudu)
+        $ExtensionMappings = Get-ExtensionMapping -Extension 'Confluence'
 
-        if ($null -eq $mappings -or @($mappings).Count -eq 0) {
+        if ($null -eq $ExtensionMappings -or @($ExtensionMappings).Count -eq 0) {
             Write-Verbose 'No Confluence mappings found in CippMapping table'
             return @()
         }
 
-        # Transform to consistent output format
-        $result = foreach ($mapping in $mappings) {
-            [PSCustomObject]@{
-                RowKey    = $mapping.RowKey
-                TenantId  = $mapping.RowKey
-                SpaceKey  = $mapping.IntegrationId
-                SpaceName = $mapping.IntegrationName
+        # Get tenants to join with mapping data (follows Hudu pattern)
+        $Tenants = Get-Tenants -IncludeErrors
+
+        # Transform to consistent output format matching Hudu
+        $Mappings = foreach ($Mapping in $ExtensionMappings) {
+            $Tenant = $Tenants | Where-Object { $_.RowKey -eq $Mapping.RowKey }
+            if ($Tenant) {
+                [PSCustomObject]@{
+                    TenantId        = $Tenant.customerId
+                    Tenant          = $Tenant.displayName
+                    TenantDomain    = $Tenant.defaultDomainName
+                    IntegrationId   = $Mapping.IntegrationId
+                    IntegrationName = $Mapping.IntegrationName
+                }
             }
         }
 
-        $resultArray = @($result)
+        $resultArray = @($Mappings)
         Write-Verbose "Found $($resultArray.Count) Confluence mapping(s)"
         return $resultArray
     }
