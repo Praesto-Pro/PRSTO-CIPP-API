@@ -55,8 +55,13 @@ function New-ConfluenceBaseURL {
         )
     }
 
-    # Normalize trailing slash
+    # Normalize trailing slash and remove /wiki suffix if present
+    # API endpoints already include /wiki, so BaseURL should be the root domain
     $normalizedURL = $BaseURL.TrimEnd('/')
+    if ($normalizedURL -match '/wiki$') {
+        $normalizedURL = $normalizedURL -replace '/wiki$', ''
+        Write-Verbose "Removed /wiki suffix from BaseURL"
+    }
 
     Write-Verbose "Storing Confluence base URL: $normalizedURL"
 
