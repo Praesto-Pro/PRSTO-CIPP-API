@@ -3,13 +3,35 @@ local.settings.json
 tenants.cache.json
 chocoapps.cache
 *.log
-.vscode/
+
 Cache_*
 Logs
 ExcludedTenants
 SendNotifications/config.json
 .env
 Output/
+index.md
 
 # Cursor IDE
 .cursor/rules
+
+# BMad files
+.agentvibes/
+#.bmad/
+#.mcp.json
+
+#claude files
+.claude/
+CLAUDE.md
+nul
+
+#Gemini files
+.gemini
+
+#docs files to ignore
+#docs/
+
+#scripts files to ignore
+scripts/
+package-lock.json
+
