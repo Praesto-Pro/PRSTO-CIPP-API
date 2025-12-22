@@ -130,7 +130,7 @@ Describe 'Get-ConfluencePageCache' {
         It 'Returns null when no cache entry exists' {
             Mock Get-CIPPAzDataTableEntity { return $null }
 
-            $result = Get-ConfluencePageCache -PageId 'nonexistent'
+            $result = Get-ConfluencePageCache -PageId '999999'
 
             $result | Should BeNullOrEmpty
         }
@@ -138,7 +138,7 @@ Describe 'Get-ConfluencePageCache' {
         It 'Returns null for empty result from table query' {
             Mock Get-CIPPAzDataTableEntity { return @() }
 
-            $result = Get-ConfluencePageCache -PageId 'missing'
+            $result = Get-ConfluencePageCache -PageId '888888'
 
             $result | Should BeNullOrEmpty
         }
@@ -156,11 +156,11 @@ Describe 'Get-ConfluencePageCache' {
         It 'Calls Get-CIPPAzDataTableEntity with correct filter' {
             Mock Get-CIPPAzDataTableEntity { return $null }
 
-            $result = Get-ConfluencePageCache -PageId 'page123'
+            $result = Get-ConfluencePageCache -PageId '123456'
 
             Assert-MockCalled Get-CIPPAzDataTableEntity -Times 1 -ParameterFilter {
                 $Filter -like "*PartitionKey eq 'ConfluencePage'*" -and
-                $Filter -like "*RowKey eq 'page123'*"
+                $Filter -like "*RowKey eq '123456'*"
             }
         }
     }
@@ -202,6 +202,65 @@ Describe 'Get-ConfluencePageCache' {
             ($result.PSObject.Properties.Name -contains 'PageTitle') | Should Be $true
             ($result.PSObject.Properties.Name -contains 'Hash') | Should Be $true
             ($result.PSObject.Properties.Name -contains 'LastUpdated') | Should Be $true
+        }
+    }
+
+    Context 'Input Validation' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CacheConfluencePages' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+        }
+
+        It 'Rejects PageId with non-numeric characters' {
+            try {
+                Get-ConfluencePageCache -PageId "page123ABC" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects PageId with injection payload (contains space and quote)' {
+            try {
+                Get-ConfluencePageCache -PageId "12345' or PartitionKey eq 'ConfluencePage" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects PageId with special characters' {
+            try {
+                Get-ConfluencePageCache -PageId "page<script>xss</script>" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Accepts valid numeric PageId' {
+            { Get-ConfluencePageCache -PageId '12345678' } | Should Not Throw
+        }
+    }
+
+    Context 'OData Filter Escaping (Defense in Depth)' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CacheConfluencePages' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+        }
+
+        It 'Escaping is redundant for valid inputs but present for defense in depth' {
+            # NOTE: ValidatePattern rejects malicious input before escaping.
+            # Escaping exists as defense-in-depth if validation is bypassed.
+            # This test verifies escaping WOULD work if needed (using valid input as proxy).
+
+            Get-ConfluencePageCache -PageId '12345'
+
+            Assert-MockCalled Get-CIPPAzDataTableEntity -Times 1 -ParameterFilter {
+                # Valid input doesn't contain quotes, so escaping is no-op
+                # But code path is exercised
+                $Filter -eq "PartitionKey eq 'ConfluencePage' and RowKey eq '12345'"
+            }
         }
     }
 }

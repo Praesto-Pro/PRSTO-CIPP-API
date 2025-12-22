@@ -26,14 +26,16 @@ function Get-ConfluencePageCache {
     [OutputType([PSCustomObject])]
     param(
         [Parameter(Mandatory)]
+        [ValidatePattern('^[0-9]+$', ErrorMessage = 'PageId must be numeric (Confluence Cloud page IDs are numeric only)')]
         [string]$PageId
     )
 
     Write-Verbose "Checking cache for page '$PageId'"
     $Table = Get-CIPPTable -TableName 'CacheConfluencePages'
 
+    $escapedPageId = $PageId -replace "'", "''"
     $Entity = Get-CIPPAzDataTableEntity @Table `
-        -Filter "PartitionKey eq 'ConfluencePage' and RowKey eq '$PageId'"
+        -Filter "PartitionKey eq 'ConfluencePage' and RowKey eq '$escapedPageId'"
 
     if ($Entity) {
         Write-Verbose "Cache hit for page '$PageId': Hash = $($Entity.Hash)"

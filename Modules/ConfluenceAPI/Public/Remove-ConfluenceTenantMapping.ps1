@@ -22,6 +22,7 @@ function Remove-ConfluenceTenantMapping {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
+        [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$|^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$', ErrorMessage = 'TenantId must be a valid GUID or domain name (e.g., contoso.onmicrosoft.com)')]
         [string]$TenantId
     )
 
@@ -32,7 +33,8 @@ function Remove-ConfluenceTenantMapping {
 
     # Find the existing mapping
     Write-Verbose "Looking up existing mapping for tenant '$TenantId'"
-    $filter = "PartitionKey eq 'ConfluenceMapping' and RowKey eq '$TenantId'"
+    $escapedTenantId = $TenantId -replace "'", "''"
+    $filter = "PartitionKey eq 'ConfluenceMapping' and RowKey eq '$escapedTenantId'"
     $entity = Get-CIPPAzDataTableEntity @CIPPMapping -Filter $filter
 
     if (-not $entity) {

@@ -23,6 +23,7 @@ function Clear-ConfluencePageCache {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter()]
+        [ValidatePattern('^[a-zA-Z0-9]+$', ErrorMessage = 'SpaceKey must contain only letters and numbers (no hyphens, underscores, or special characters per Confluence specification)')]
         [string]$SpaceKey
     )
 
@@ -32,7 +33,8 @@ function Clear-ConfluencePageCache {
     $Table = Get-CIPPTable -TableName 'CacheConfluencePages'
 
     if ($SpaceKey) {
-        $Filter = "PartitionKey eq 'ConfluencePage' and SpaceKey eq '$SpaceKey'"
+        $escapedSpaceKey = $SpaceKey -replace "'", "''"
+        $Filter = "PartitionKey eq 'ConfluencePage' and SpaceKey eq '$escapedSpaceKey'"
     } else {
         $Filter = "PartitionKey eq 'ConfluencePage'"
     }

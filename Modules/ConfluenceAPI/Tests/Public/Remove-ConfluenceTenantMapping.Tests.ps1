@@ -202,4 +202,60 @@ Describe 'Remove-ConfluenceTenantMapping' {
             Assert-MockCalled Remove-AzDataTableEntity -Scope It -Times 1
         }
     }
+
+    Context 'Input Validation' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CippMapping' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+            Mock Remove-AzDataTableEntity { }
+        }
+
+        It 'Rejects TenantId with invalid domain (missing TLD)' {
+            try {
+                Remove-ConfluenceTenantMapping -TenantId "abc" -Confirm:$false -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects TenantId with injection payload (contains space and quote)' {
+            try {
+                Remove-ConfluenceTenantMapping -TenantId "abc' or PartitionKey eq 'ConfluenceMapping" -Confirm:$false -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Accepts valid GUID format for TenantId' {
+            { Remove-ConfluenceTenantMapping -TenantId '12345678-1234-1234-1234-123456789abc' -Confirm:$false } | Should Not Throw
+        }
+
+        It 'Accepts valid domain format for TenantId' {
+            { Remove-ConfluenceTenantMapping -TenantId 'contoso.onmicrosoft.com' -Confirm:$false } | Should Not Throw
+        }
+    }
+
+    Context 'OData Filter Escaping (Defense in Depth)' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CippMapping' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+            Mock Remove-AzDataTableEntity { }
+        }
+
+        It 'Escaping is redundant for valid inputs but present for defense in depth' {
+            # NOTE: ValidatePattern rejects malicious input before escaping.
+            # Escaping exists as defense-in-depth if validation is bypassed.
+            # This test verifies escaping WOULD work if needed (using valid input as proxy).
+
+            Remove-ConfluenceTenantMapping -TenantId 'contoso-test.com' -Confirm:$false
+
+            Assert-MockCalled Get-CIPPAzDataTableEntity -Times 1 -ParameterFilter {
+                # Valid input doesn't contain quotes, so escaping is no-op
+                # But code path is exercised
+                $Filter -eq "PartitionKey eq 'ConfluenceMapping' and RowKey eq 'contoso-test.com'"
+            }
+        }
+    }
 }

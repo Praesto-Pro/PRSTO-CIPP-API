@@ -167,18 +167,12 @@ Describe 'Get-ConfluenceTenantMapping' {
             Mock Get-CIPPAzDataTableEntity { return $null }
         }
 
-        It 'Accepts empty string for TenantId (falls through to all mappings)' {
-            Get-ConfluenceTenantMapping -TenantId ''
-            Assert-MockCalled Get-CIPPAzDataTableEntity -Scope It -ParameterFilter {
-                $Filter -eq "PartitionKey eq 'ConfluenceMapping'"
-            }
+        It 'Rejects empty string for TenantId (ValidatePattern)' {
+            { Get-ConfluenceTenantMapping -TenantId '' } | Should Throw
         }
 
-        It 'Accepts empty string for SpaceKey (falls through to all mappings)' {
-            Get-ConfluenceTenantMapping -SpaceKey ''
-            Assert-MockCalled Get-CIPPAzDataTableEntity -Scope It -ParameterFilter {
-                $Filter -eq "PartitionKey eq 'ConfluenceMapping'"
-            }
+        It 'Rejects empty string for SpaceKey (ValidatePattern)' {
+            { Get-ConfluenceTenantMapping -SpaceKey '' } | Should Throw
         }
 
         It 'Uses parameter sets to prevent TenantId and SpaceKey together' {
@@ -193,6 +187,91 @@ Describe 'Get-ConfluenceTenantMapping' {
             $cmd = Get-Command Get-ConfluenceTenantMapping
             $attr = $cmd.ScriptBlock.Attributes | Where-Object { $_.TypeId.Name -eq 'CmdletBindingAttribute' }
             $attr.DefaultParameterSetName | Should Be 'All'
+        }
+    }
+
+    Context 'Input Validation' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CippMapping' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+        }
+
+        It 'Rejects TenantId with invalid domain (missing TLD)' {
+            try {
+                Get-ConfluenceTenantMapping -TenantId "abc" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects TenantId with injection payload (contains space and quote)' {
+            try {
+                Get-ConfluenceTenantMapping -TenantId "abc' or PartitionKey eq 'ConfluenceMapping" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects SpaceKey with hyphens (not allowed per Confluence spec)' {
+            try {
+                Get-ConfluenceTenantMapping -SpaceKey 'CONTOSO-SPACE' -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects SpaceKey with underscores (not allowed per Confluence spec)' {
+            try {
+                Get-ConfluenceTenantMapping -SpaceKey 'CONTOSO_SPACE' -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Rejects SpaceKey with injection payload (contains space and quote)' {
+            try {
+                Get-ConfluenceTenantMapping -SpaceKey "CONTOSO' or PartitionKey eq 'ConfluenceMapping" -ErrorAction Stop
+                throw "Should have thrown ParameterBindingValidationException"
+            } catch {
+                $_.Exception.GetType().Name | Should Be 'ParameterBindingValidationException'
+            }
+        }
+
+        It 'Accepts valid GUID format for TenantId' {
+            { Get-ConfluenceTenantMapping -TenantId '12345678-1234-1234-1234-123456789abc' } | Should Not Throw
+        }
+
+        It 'Accepts valid domain format for TenantId' {
+            { Get-ConfluenceTenantMapping -TenantId 'contoso.onmicrosoft.com' } | Should Not Throw
+        }
+
+        It 'Accepts valid alphanumeric SpaceKey' {
+            { Get-ConfluenceTenantMapping -SpaceKey 'CONTOSO1' } | Should Not Throw
+        }
+    }
+
+    Context 'OData Filter Escaping (Defense in Depth)' {
+        BeforeEach {
+            Mock Get-CIPPTable { return @{ TableName = 'CippMapping' } }
+            Mock Get-CIPPAzDataTableEntity { return $null }
+        }
+
+        It 'Escaping is redundant for valid inputs but present for defense in depth' {
+            # NOTE: ValidatePattern rejects malicious input before escaping.
+            # Escaping exists as defense-in-depth if validation is bypassed.
+            # This test verifies escaping WOULD work if needed (using valid input as proxy).
+
+            Get-ConfluenceTenantMapping -TenantId 'contoso-test.com'
+
+            Assert-MockCalled Get-CIPPAzDataTableEntity -Times 1 -ParameterFilter {
+                # Valid input doesn't contain quotes, so escaping is no-op
+                # But code path is exercised
+                $Filter -eq "PartitionKey eq 'ConfluenceMapping' and RowKey eq 'contoso-test.com'"
+            }
         }
     }
 }

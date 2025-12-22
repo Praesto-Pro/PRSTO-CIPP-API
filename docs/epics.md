@@ -5,6 +5,7 @@ inputDocuments:
   - docs/prd.md
   - docs/architecture.md
   - docs/sprint-artifacts/epic-9-retro-2025-12-18.md
+  - docs/sprint-artifacts/epic-10-retro-2025-12-18.md
   - docs/analysis/research/technical-cipp-extension-integration-research-2025-12-18.md
 ---
 
@@ -483,10 +484,34 @@ Technical Lead can use the ConfluenceAPI module as a fully-integrated CIPP exten
 
 ---
 
-## References
 
-- [PRD](prd.md) - Product Requirements Document
-- [Architecture](architecture.md) - Architecture Decision Document
-- [Epic 9 Retrospective](sprint-artifacts/epic-9-retro-2025-12-18.md) - Epic 10 definition
-- [Technical Research](analysis/research/technical-cipp-extension-integration-research-2025-12-18.md) - CIPP extension patterns
-- [Sprint Status](sprint-artifacts/sprint-status.yaml) - Current development status
+### Epic 11: Production Readiness & Process Improvements
+
+**Status:** ? Pending
+**Details:** See [Epic 11: Production Readiness & Process Improvements](epics/epic-11-production-readiness.md)
+
+**Story Overview:**
+
+| Story | Title | Priority | Status |
+|-------|-------|----------|--------|
+| 11.1 | Comprehensive Security Code Review | CRITICAL | backlog |
+| 11.2 | Live Integration Testing | CRITICAL | backlog |
+| 11.3 | CI/CD Pipeline Verification | HIGH | backlog |
+| 11.4 | Deployment Documentation | HIGH | backlog |
+| 11.5 | Stakeholder Demo and Acceptance | CRITICAL | backlog |
+| 11.6 | Document PS 5.1 Compatibility Patterns | Process | backlog |
+| 11.7 | Create Story Title Guidelines | Process | backlog |
+
+**Key Deliverables:**
+- Security issues identified and resolved
+- Live testing validates all sync operations
+- CI/CD pipeline verified or manual procedure documented
+- Complete deployment documentation ready
+- Stakeholder acceptance obtained
+- Process documentation prevents future friction
+
+**Dependencies:**
+- Epic 10 complete ?
+- Test CIPP environment available
+- Stakeholder availability for demo
+- **Production deployment blocked until Epic 11 complete**

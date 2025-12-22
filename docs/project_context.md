@@ -238,6 +238,67 @@ Describe 'Get-ConfluenceSpace' {
   $cql = "title = '$Title' and space = '$SpaceKey'"
   ```
 
+- **OData Filter Security (Azure Table Storage)** - Escape single quotes in ALL user input for OData filter queries:
+
+  ```powershell
+  # CORRECT: Escape before filter construction
+  $escapedTenantId = $TenantId -replace "'", "''"
+  $filter = "PartitionKey eq 'ConfluenceMapping' and RowKey eq '$escapedTenantId'"
+
+  # WRONG: Direct interpolation allows NoSQL injection
+  $filter = "PartitionKey eq 'ConfluenceMapping' and RowKey eq '$TenantId'"
+
+  # Attack Example:
+  # Input: $TenantId = "abc' or PartitionKey eq 'ConfluenceMapping"
+  # Result: Bypasses tenant isolation, returns ALL mappings
+  ```
+
+  **Defense in Depth:** Combine escaping with `[ValidatePattern()]` validation (MANDATORY for all OData parameters):
+
+  ### OData Filter Security Checklist
+
+  For **ANY** parameter used in OData filter construction:
+
+  **1. Input Validation (Primary Defense)**
+
+  - ✅ Add `[ValidatePattern()]` with strict regex matching expected format
+  - ✅ Verify pattern against ACTUAL API specification (not assumptions)
+  - ✅ Include ErrorMessage for better UX
+
+  **Pattern Reference (API-verified):**
+
+  ```powershell
+  # Confluence Page ID - Numeric only (Cloud spec)
+  [ValidatePattern('^[0-9]+$', ErrorMessage = 'PageId must be numeric (Confluence Cloud page IDs are numeric only)')]
+
+  # Confluence Space Key - Letters and numbers only (no hyphens, underscores)
+  [ValidatePattern('^[a-zA-Z0-9]+$', ErrorMessage = 'SpaceKey must contain only letters and numbers (no hyphens, underscores, or special characters per Confluence specification)')]
+
+  # Azure AD Tenant ID - GUID or domain with TLD
+  [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$|^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$', ErrorMessage = 'TenantId must be a valid GUID or domain name (e.g., contoso.onmicrosoft.com)')]
+  ```
+
+  **2. Escaping (Defense in Depth)**
+
+  - ✅ ALWAYS escape before filter construction: `$escaped = $input -replace "'", "''"`
+  - ✅ Use escaped variable in filter string
+  - ✅ Required even with validation (defense if validation bypassed)
+
+  **3. Code Review Checklist**
+
+  - ✅ Validation pattern matches ACTUAL API spec (not assumptions)
+  - ✅ Escaping occurs BEFORE filter construction
+  - ✅ NO raw variables in filter strings
+  - ✅ Test coverage includes validation rejection tests
+  - ✅ Test coverage includes escaping unit tests (see `ODataEscaping.Tests.ps1`)
+
+  **Affected Functions:** `Get-ConfluenceTenantMapping`, `Remove-ConfluenceTenantMapping`, `Get-ConfluencePageCache`, `Clear-ConfluencePageCache`
+
+  **References:**
+  - [Confluence Space Keys Spec](https://confluence.atlassian.com/display/DOC/Space+Keys)
+  - [Confluence Cloud REST API](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/)
+  - [Azure AD Tenant ID Spec](https://learn.microsoft.com/en-us/partner-center/account-settings/find-ids-and-domain-names)
+
 ### PowerShell Gotchas
 
 - **PS 5.1 vs 7 differences:**
@@ -281,4 +342,4 @@ Describe 'Get-ConfluenceSpace' {
 
 ---
 
-Last Updated: 2025-12-15
+Last Updated: 2025-12-21
