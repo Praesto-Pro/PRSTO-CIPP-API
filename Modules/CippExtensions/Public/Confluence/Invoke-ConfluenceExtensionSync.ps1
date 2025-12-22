@@ -59,9 +59,15 @@ function Invoke-ConfluenceExtensionSync {
         [string]$TenantFilter
     )
 
+    # Set ConfirmPreference to None to allow non-interactive sync operations
+    # (Sync functions use SupportsShouldProcess which requires this in Azure Functions)
+    $ConfirmPreference = 'None'
+
     # Phase 1: Initialize result tracking with Generic Lists for O(1) append
     # Note: Name will be updated to display name once cache is loaded (matches Hudu pattern)
     Write-Verbose "Initializing Confluence extension sync for tenant '$TenantFilter'"
+    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Starting Confluence extension sync for $TenantFilter" -Sev 'Debug'
+
     $CompanyResult = [PSCustomObject]@{
         Name    = $TenantFilter
         Users   = 0
@@ -89,29 +95,40 @@ function Invoke-ConfluenceExtensionSync {
         if (-not $connectionResult -or -not $connectionResult.Success) {
             $errorMsg = if ($connectionResult -and $connectionResult.Error) { $connectionResult.Error } else { 'Unknown connection error' }
             $CompanyResult.Errors.Add("Confluence connection failed: $errorMsg")
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Confluence connection failed: $errorMsg" -Sev 'Error'
             Write-Verbose "Connection failed: $errorMsg"
             return $CompanyResult
         }
         $CompanyResult.Logs.Add('Connected to Confluence API')
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'Connected to Confluence API' -Sev 'Debug'
 
         # Phase 3: Resolve tenant mapping
         Write-Verbose "Resolving tenant mapping for '$TenantFilter'"
         $allMappings = Get-ConfluenceMapping
-        $TenantMapping = $allMappings | Where-Object { $_.RowKey -eq $TenantFilter -or $_.TenantId -eq $TenantFilter }
+        # Match by TenantDomain (defaultDomainName), TenantId (customerId), or Tenant (displayName)
+        $TenantMapping = $allMappings | Where-Object {
+            $_.TenantDomain -eq $TenantFilter -or
+            $_.TenantId -eq $TenantFilter -or
+            $_.Tenant -eq $TenantFilter
+        }
 
         if (-not $TenantMapping) {
             $CompanyResult.Errors.Add("No Confluence mapping found for tenant '$TenantFilter'. Configure mappings in CIPP Settings > Extensions > Confluence.")
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "No Confluence mapping found for tenant '$TenantFilter'" -Sev 'Warning'
             Write-Verbose "No mapping found for tenant '$TenantFilter'"
             return $CompanyResult
         }
 
-        $SpaceKey = $TenantMapping.SpaceKey
+        # IntegrationId contains the Confluence space key
+        $SpaceKey = $TenantMapping.IntegrationId
         if (-not $SpaceKey) {
-            $CompanyResult.Errors.Add("Tenant mapping exists but SpaceKey is empty for '$TenantFilter'")
+            $CompanyResult.Errors.Add("Tenant mapping exists but IntegrationId (space key) is empty for '$TenantFilter'")
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Tenant mapping exists but space key is empty for '$TenantFilter'" -Sev 'Error'
             return $CompanyResult
         }
 
         Write-Verbose "Resolved tenant mapping: SpaceKey = '$SpaceKey'"
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Resolved tenant to Confluence space '$SpaceKey'" -Sev 'Debug'
         $CompanyResult.Logs.Add("Tenant mapped to Confluence space '$SpaceKey'")
 
         # Phase 4: Load cached M365 data
@@ -120,6 +137,7 @@ function Invoke-ConfluenceExtensionSync {
 
         if ($null -eq $ExtensionCache) {
             $CompanyResult.Errors.Add("No cached data found for tenant '$TenantFilter'. Run Sync-CippExtensionData first.")
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "No cached M365 data found for tenant '$TenantFilter'" -Sev 'Error'
             return $CompanyResult
         }
 
@@ -152,16 +170,19 @@ function Invoke-ConfluenceExtensionSync {
                         $syncParams['Licenses'] = @($ExtensionCache.Licenses)
                     }
 
-                    $null = Sync-ConfluenceUserInventory @syncParams
+                    $syncResult = Sync-ConfluenceUserInventory @syncParams
                     $CompanyResult.Users = $userCount
                     $CompanyResult.Logs.Add("User sync complete: $userCount users")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced to space '$SpaceKey' (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('User sync skipped: no users in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'User sync skipped: no users in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("User sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync failed: $_" -Sev 'Error'
                 Write-Verbose "User sync error: $_"
             }
         }
@@ -178,16 +199,19 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing endpoint inventory ($deviceCount devices)"
 
                 if ($deviceCount -gt 0) {
-                    $null = Sync-ConfluenceEndpointInventory -SpaceKey $SpaceKey -Endpoints $devices
+                    $syncResult = Sync-ConfluenceEndpointInventory -SpaceKey $SpaceKey -Endpoints $devices
                     $CompanyResult.Devices = $deviceCount
                     $CompanyResult.Logs.Add("Device sync complete: $deviceCount devices")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync complete: $deviceCount devices synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('Device sync skipped: no devices in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'Device sync skipped: no devices in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("Device sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync failed: $_" -Sev 'Error'
                 Write-Verbose "Device sync error: $_"
             }
         }
@@ -214,15 +238,18 @@ function Invoke-ConfluenceExtensionSync {
                         $syncParams['Users'] = @($ExtensionCache.Users)
                     }
 
-                    $null = Sync-ConfluenceLicenseReport @syncParams
+                    $syncResult = Sync-ConfluenceLicenseReport @syncParams
                     $CompanyResult.Logs.Add("License sync complete: $licenseCount licenses")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "License sync complete: $licenseCount licenses synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('License sync skipped: no licenses in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'License sync skipped: no licenses in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("License sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "License sync failed: $_" -Sev 'Error'
                 Write-Verbose "License sync error: $_"
             }
         }
@@ -239,15 +266,18 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing MFA report ($($users.Count) users)"
 
                 if ($users.Count -gt 0) {
-                    $null = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -Users $users
+                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -Users $users
                     $CompanyResult.Logs.Add("MFA sync complete: $($users.Count) users")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($users.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('MFA sync skipped: no user data in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'MFA sync skipped: no user data in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("MFA sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync failed: $_" -Sev 'Error'
                 Write-Verbose "MFA sync error: $_"
             }
         }
@@ -267,15 +297,18 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing Teams inventory ($teamsCount teams)"
 
                 if ($teamsCount -gt 0) {
-                    $null = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -Teams $teamsArray
+                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -Teams $teamsArray
                     $CompanyResult.Logs.Add("Teams sync complete: $teamsCount teams")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync complete: $teamsCount teams synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('Teams sync skipped: no Teams data in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'Teams sync skipped: no Teams data in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("Teams sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync failed: $_" -Sev 'Error'
                 Write-Verbose "Teams sync error: $_"
             }
         }
@@ -292,15 +325,18 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing SharePoint/OneDrive inventory ($($oneDriveData.Count) sites)"
 
                 if ($oneDriveData.Count -gt 0) {
-                    $null = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -Sites $oneDriveData
+                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -Sites $oneDriveData
                     $CompanyResult.Logs.Add("SharePoint sync complete: $($oneDriveData.Count) sites")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync complete: $($oneDriveData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('SharePoint sync skipped: no OneDrive/SharePoint data in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SharePoint sync skipped: no data in cache' -Sev 'Debug'
                 }
             }
             catch {
                 $CompanyResult.Errors.Add("SharePoint sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync failed: $_" -Sev 'Error'
                 Write-Verbose "SharePoint sync error: $_"
             }
         }
@@ -310,15 +346,21 @@ function Invoke-ConfluenceExtensionSync {
         }
 
         $CompanyResult.Logs.Add('Confluence Extension Sync completed')
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Confluence sync completed. Users: $($CompanyResult.Users), Devices: $($CompanyResult.Devices)" -Sev 'Info'
     }
     catch {
         $CompanyResult.Errors.Add("Orchestrator error: $_")
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Confluence sync orchestrator error: $_" -Sev 'Error'
         Write-Verbose "Fatal orchestrator error: $_"
     }
 
     # Final summary
     $errorCount = $CompanyResult.Errors.Count
     Write-Verbose "Sync complete. Users: $($CompanyResult.Users), Devices: $($CompanyResult.Devices), Errors: $errorCount"
+
+    if ($errorCount -gt 0) {
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Confluence sync finished with $errorCount error(s)" -Sev 'Warning'
+    }
 
     return $CompanyResult
 }
