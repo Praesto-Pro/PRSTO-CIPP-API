@@ -59,7 +59,7 @@ function Set-ConfluenceMapping {
     .LINK
         Get-ConfluenceMapping
     #>
-    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [CmdletBinding()]
     [OutputType([PSCustomObject])]
     param(
         [Parameter()]
@@ -85,14 +85,12 @@ function Set-ConfluenceMapping {
     try {
         # Optionally clear existing mappings (follows Hudu pattern)
         if ($ClearExisting) {
-            if ($PSCmdlet.ShouldProcess('ConfluenceMapping entries', 'Clear existing')) {
-                Write-Verbose 'Clearing existing Confluence mappings'
-                $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
-                foreach ($existing in $existingMappings) {
-                    Remove-AzDataTableEntity -Force @CIPPMapping -Entity $existing
-                }
-                Write-Verbose "Cleared $(@($existingMappings).Count) existing mapping(s)"
+            Write-Verbose 'Clearing existing Confluence mappings'
+            $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
+            foreach ($existing in $existingMappings) {
+                Remove-AzDataTableEntity -Force @CIPPMapping -Entity $existing
             }
+            Write-Verbose "Cleared $(@($existingMappings).Count) existing mapping(s)"
         }
 
         # Process each mapping in the request body
@@ -107,18 +105,16 @@ function Set-ConfluenceMapping {
                 continue
             }
 
-            if ($PSCmdlet.ShouldProcess("$tenantId -> $spaceKey", 'Set mapping')) {
-                $AddObject = @{
-                    PartitionKey    = 'ConfluenceMapping'
-                    RowKey          = "$tenantId"
-                    IntegrationId   = "$spaceKey"
-                    IntegrationName = "$spaceName"
-                }
-
-                Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
-                Write-LogMessage -API $APIName -headers $Request.Headers -message "Added Confluence mapping for $tenantId -> $spaceKey" -Sev 'Info'
-                $mappingCount++
+            $AddObject = @{
+                PartitionKey    = 'ConfluenceMapping'
+                RowKey          = "$tenantId"
+                IntegrationId   = "$spaceKey"
+                IntegrationName = "$spaceName"
             }
+
+            Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
+            Write-LogMessage -API $APIName -headers $Request.Headers -message "Added Confluence mapping for $tenantId -> $spaceKey" -Sev 'Info'
+            $mappingCount++
         }
 
         Write-Verbose "Set $mappingCount Confluence mapping(s)"
