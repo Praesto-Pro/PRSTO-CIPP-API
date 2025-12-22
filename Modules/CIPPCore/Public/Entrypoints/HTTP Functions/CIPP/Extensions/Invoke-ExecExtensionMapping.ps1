@@ -66,7 +66,10 @@ Function Invoke-ExecExtensionMapping {
 
           # Get available spaces for dropdown
           $Spaces = Get-ConfluenceSpace
-          $SpacesList = $Spaces | ForEach-Object {
+
+          # Filter out already-mapped spaces (like tenant list shows only unmapped tenants)
+          $MappedSpaceKeys = @($Mappings | ForEach-Object { $_.IntegrationId })
+          $SpacesList = $Spaces | Where-Object { $_.Key -notin $MappedSpaceKeys } | ForEach-Object {
             [PSCustomObject]@{
               name  = $_.Name
               value = $_.Key
