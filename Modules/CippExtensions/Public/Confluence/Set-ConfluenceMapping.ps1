@@ -28,22 +28,19 @@ function Set-ConfluenceMapping {
         HTTP request object containing:
         - Headers: For logging context
         - Body: Array of mapping objects with TenantId, IntegrationId (SpaceKey), IntegrationName (SpaceName)
-    .PARAMETER ClearExisting
-        When specified, clears all existing ConfluenceMapping entries before writing new ones.
-        Default behavior is to upsert (update or insert).
+    .NOTES
+        Following the Hudu pattern, this function always clears all existing mappings
+        before writing the new set. The frontend sends ALL current mappings - any mapping
+        not included has been deleted by the user.
     .OUTPUTS
         [PSCustomObject] - Result object with Results property
     .EXAMPLE
         $mappings = @(
             @{ TenantId = 'contoso.onmicrosoft.com'; IntegrationId = 'CONTOSO'; IntegrationName = 'Contoso Corp' }
         )
-        Set-ConfluenceMapping -Request @{ Body = $mappings; Headers = @{} } -ClearExisting
+        Set-ConfluenceMapping -Request @{ Body = $mappings; Headers = @{} }
 
-        Clears existing mappings and sets new tenant-to-space mappings.
-    .EXAMPLE
-        Set-ConfluenceMapping -Request $Request -WhatIf
-
-        Shows what mappings would be set without making changes.
+        Replaces all existing mappings with the new tenant-to-space mappings.
     .NOTES
         Part of Story 10.1 - Extension Sync Orchestrator.
 
@@ -69,10 +66,7 @@ function Set-ConfluenceMapping {
         [string]$APIName = 'ConfluenceMapping',
 
         [Parameter(Mandatory)]
-        $Request,
-
-        [Parameter()]
-        [switch]$ClearExisting
+        $Request
     )
 
     Write-Verbose 'Setting Confluence tenant mappings'
@@ -83,14 +77,10 @@ function Set-ConfluenceMapping {
     }
 
     try {
-        # Optionally clear existing mappings (follows Hudu pattern)
-        if ($ClearExisting) {
-            Write-Verbose 'Clearing existing Confluence mappings'
-            $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
-            foreach ($existing in $existingMappings) {
-                Remove-AzDataTableEntity -Force @CIPPMapping -Entity $existing
-            }
-            Write-Verbose "Cleared $(@($existingMappings).Count) existing mapping(s)"
+        # Delete all existing mappings first (follows Hudu pattern exactly)
+        # The frontend sends all current mappings - if one is missing, it's been deleted
+        Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'" | ForEach-Object {
+            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
         }
 
         # Process each mapping in the request body
