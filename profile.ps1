@@ -31,10 +31,11 @@ foreach ($Module in $Modules) {
         Import-Module -Name (Join-Path $ModulesPath $Module) -ErrorAction Stop
         $SwModule.Stop()
         $Timings["Module_$Module"] = $SwModule.Elapsed.TotalMilliseconds
+        Write-Information "Successfully loaded module: $Module"
     } catch {
         $SwModule.Stop()
         $Timings["Module_$Module"] = $SwModule.Elapsed.TotalMilliseconds
-        Write-LogMessage -message "Failed to import module - $Module" -LogData (Get-CippException -Exception $_) -Sev 'debug'
+        Write-Warning "FAILED to load module $Module : $($_.Exception.Message)"
         Write-Error $_.Exception.Message
     }
 }
