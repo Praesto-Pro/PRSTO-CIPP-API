@@ -107,5 +107,5 @@ function Set-ConfluenceMapping {
     }
     Write-LogMessage -API $APIName -headers $Request.Headers -message "Added $addCount Confluence mapping(s)" -Sev 'Info'
 
-    return [PSCustomObject]@{ Results = 'Successfully edited mapping table.' }
+    return [PSCustomObject]@{ Results = "Confluence mapping table updated (v2). Deleted: $deleteCount, Added: $addCount" }
 }
