@@ -70,10 +70,12 @@ function Set-ConfluenceMapping {
     )
 
     Write-Verbose 'Setting Confluence tenant mappings'
+    Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping ENTERED - CIPPMapping param is: $(if($CIPPMapping){'provided'}else{'null'})" -Sev 'Info'
 
     # Get table reference if not provided
     if (-not $CIPPMapping) {
         $CIPPMapping = Get-CIPPTable -TableName 'CippMapping'
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Got CIPPMapping table reference" -Sev 'Info'
     }
 
     # Step 1: Delete all existing mappings (Hudu pattern - replace all)
