@@ -77,18 +77,19 @@ function Set-ConfluenceMapping {
     }
 
     # Step 1: Delete all existing mappings (Hudu pattern - replace all)
-    $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
     $deleteCount = 0
-    foreach ($entity in $existingMappings) {
-        try {
+    try {
+        $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Found $(@($existingMappings).Count) existing Confluence mapping(s) to delete" -Sev 'Info'
+        foreach ($entity in $existingMappings) {
             Remove-AzDataTableEntity -Force @CIPPMapping -Entity $entity
             $deleteCount++
         }
-        catch {
-            Write-LogMessage -API $APIName -headers $Request.Headers -message "Failed to delete mapping $($entity.RowKey): $_" -Sev 'Error'
-        }
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Deleted $deleteCount Confluence mapping(s)" -Sev 'Info'
     }
-    Write-LogMessage -API $APIName -headers $Request.Headers -message "Deleted $deleteCount existing Confluence mapping(s)" -Sev 'Info'
+    catch {
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Delete step FAILED: $_" -Sev 'Error'
+    }
 
     # Step 2: Add all mappings from request body
     $addCount = 0
