@@ -77,16 +77,21 @@ function Set-ConfluenceMapping {
     }
 
     # Step 1: Delete all existing mappings (Hudu pattern - replace all)
-    try {
-        Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'" | ForEach-Object {
-            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
+    $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
+    $deleteCount = 0
+    foreach ($entity in $existingMappings) {
+        try {
+            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $entity
+            $deleteCount++
+        }
+        catch {
+            Write-LogMessage -API $APIName -headers $Request.Headers -message "Failed to delete mapping $($entity.RowKey): $_" -Sev 'Error'
         }
     }
-    catch {
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping DELETE FAILED: $_" -Sev 'Error'
-    }
+    Write-LogMessage -API $APIName -headers $Request.Headers -message "Deleted $deleteCount existing Confluence mapping(s)" -Sev 'Info'
 
     # Step 2: Add all mappings from request body
+    $addCount = 0
     foreach ($Mapping in $Request.Body) {
         $AddObject = @{
             PartitionKey    = 'ConfluenceMapping'
@@ -95,8 +100,9 @@ function Set-ConfluenceMapping {
             IntegrationName = "$($Mapping.IntegrationName)"
         }
         Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Added mapping for $($Mapping.name)." -Sev 'Info'
+        $addCount++
     }
+    Write-LogMessage -API $APIName -headers $Request.Headers -message "Added $addCount Confluence mapping(s)" -Sev 'Info'
 
     return [PSCustomObject]@{ Results = 'Successfully edited mapping table.' }
 }
