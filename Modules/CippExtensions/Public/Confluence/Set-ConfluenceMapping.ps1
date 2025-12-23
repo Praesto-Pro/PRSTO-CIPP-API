@@ -79,17 +79,16 @@ function Set-ConfluenceMapping {
     try {
         # Log what we received for debugging
         $bodyCount = @($Request.Body).Count
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping called with $bodyCount mapping(s) in request body" -Sev 'Debug'
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping: Received $bodyCount mapping(s) in request" -Sev 'Info'
 
         # Delete all existing mappings first (follows Hudu pattern exactly)
         # The frontend sends all current mappings - if one is missing, it's been deleted
-        $existingMappings = @(Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'")
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Found $($existingMappings.Count) existing mapping(s) to delete" -Sev 'Debug'
-
-        foreach ($existing in $existingMappings) {
-            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $existing
-            Write-LogMessage -API $APIName -headers $Request.Headers -message "Deleted mapping for $($existing.RowKey)" -Sev 'Debug'
+        $deleteCount = 0
+        Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'" | ForEach-Object {
+            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
+            $deleteCount++
         }
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping: Deleted $deleteCount existing mapping(s)" -Sev 'Info'
 
         # Process each mapping in the request body
         $mappingCount = 0
