@@ -52,7 +52,7 @@ function Invoke-ConfluenceExtensionSync {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Configuration,
+        $Configuration,
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
