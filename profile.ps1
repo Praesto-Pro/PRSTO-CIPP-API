@@ -43,9 +43,19 @@ foreach ($Module in $Modules) {
 $SwModule = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI\0.1.0\ConfluenceAPI.psd1'
+    Write-Information "ConfluenceAPI: Loading from path: $ConfluenceAPIPath"
+    Write-Information "ConfluenceAPI: Path exists: $(Test-Path $ConfluenceAPIPath)"
     Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop
     $SwModule.Stop()
     $Timings['Module_ConfluenceAPI'] = $SwModule.Elapsed.TotalMilliseconds
+    # Verify function loaded correctly
+    $syncFunc = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
+    if ($syncFunc) {
+        $params = $syncFunc.Parameters.Keys -join ', '
+        Write-Information "ConfluenceAPI: Sync-ConfluenceUserInventory loaded with params: $params"
+    } else {
+        Write-Warning 'ConfluenceAPI: Sync-ConfluenceUserInventory NOT FOUND after module load!'
+    }
     Write-Information 'Successfully loaded module: ConfluenceAPI'
 } catch {
     $SwModule.Stop()
