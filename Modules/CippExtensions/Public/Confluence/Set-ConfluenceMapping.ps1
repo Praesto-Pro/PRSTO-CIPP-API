@@ -6,19 +6,15 @@ function Set-ConfluenceMapping {
         Writes or updates Confluence tenant mappings in the CippMapping Azure Table Storage.
         Each mapping associates a CIPP tenant with a Confluence space.
 
-        This function:
-        1. Optionally clears existing ConfluenceMapping entries
-        2. Writes new mappings to the CippMapping table
-        3. Logs each mapping operation
-        4. Supports -WhatIf for safe preview
+        Following the Hudu pattern, this function always clears all existing mappings
+        before writing the new set. The frontend sends ALL current mappings - any mapping
+        not included has been deleted by the user.
 
         Mappings are stored with:
         - PartitionKey: 'ConfluenceMapping'
         - RowKey: TenantId (tenant's defaultDomainName or customerId)
         - IntegrationId: Confluence space key
         - IntegrationName: Confluence space display name
-
-        This function follows the Set-HuduMapping pattern from CippExtensions.
     .PARAMETER CIPPMapping
         CippMapping table reference from Get-CIPPTable.
         If not provided, table is retrieved automatically.
@@ -28,10 +24,6 @@ function Set-ConfluenceMapping {
         HTTP request object containing:
         - Headers: For logging context
         - Body: Array of mapping objects with TenantId, IntegrationId (SpaceKey), IntegrationName (SpaceName)
-    .NOTES
-        Following the Hudu pattern, this function always clears all existing mappings
-        before writing the new set. The frontend sends ALL current mappings - any mapping
-        not included has been deleted by the user.
     .OUTPUTS
         [PSCustomObject] - Result object with Results property
     .EXAMPLE
@@ -41,18 +33,6 @@ function Set-ConfluenceMapping {
         Set-ConfluenceMapping -Request @{ Body = $mappings; Headers = @{} }
 
         Replaces all existing mappings with the new tenant-to-space mappings.
-    .NOTES
-        Part of Story 10.1 - Extension Sync Orchestrator.
-
-        This function is located in CippExtensions because it writes to
-        CIPP's CippMapping table using CIPP's Azure Table functions.
-
-        Dependencies:
-        - Get-CIPPTable (CIPP framework)
-        - Get-CIPPAzDataTableEntity (CIPP framework)
-        - Add-CIPPAzDataTableEntity (CIPP framework)
-        - Remove-AzDataTableEntity (CIPP framework)
-        - Write-LogMessage (CIPP framework)
     .LINK
         Get-ConfluenceMapping
     #>
@@ -70,31 +50,19 @@ function Set-ConfluenceMapping {
     )
 
     Write-Verbose 'Setting Confluence tenant mappings'
-    Write-LogMessage -API $APIName -headers $Request.Headers -message "Set-ConfluenceMapping ENTERED - CIPPMapping param is: $(if($CIPPMapping){'provided'}else{'null'})" -Sev 'Info'
 
     # Get table reference if not provided
     if (-not $CIPPMapping) {
         $CIPPMapping = Get-CIPPTable -TableName 'CippMapping'
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Got CIPPMapping table reference" -Sev 'Info'
     }
 
-    # Step 1: Delete all existing mappings (Hudu pattern - replace all)
-    $deleteCount = 0
-    try {
-        $existingMappings = Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'"
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Found $(@($existingMappings).Count) existing Confluence mapping(s) to delete" -Sev 'Info'
-        foreach ($entity in $existingMappings) {
-            Remove-AzDataTableEntity -Force @CIPPMapping -Entity $entity
-            $deleteCount++
-        }
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Deleted $deleteCount Confluence mapping(s)" -Sev 'Info'
-    }
-    catch {
-        Write-LogMessage -API $APIName -headers $Request.Headers -message "Delete step FAILED: $_" -Sev 'Error'
+    # Delete all existing mappings first (follows Hudu pattern exactly)
+    # The frontend sends all current mappings - if one is missing, it's been deleted
+    Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'ConfluenceMapping'" | ForEach-Object {
+        Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
     }
 
-    # Step 2: Add all mappings from request body
-    $addCount = 0
+    # Add all mappings from request body
     foreach ($Mapping in $Request.Body) {
         $AddObject = @{
             PartitionKey    = 'ConfluenceMapping'
@@ -103,9 +71,8 @@ function Set-ConfluenceMapping {
             IntegrationName = "$($Mapping.IntegrationName)"
         }
         Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
-        $addCount++
+        Write-LogMessage -API $APIName -headers $Request.Headers -message "Added mapping for $($Mapping.IntegrationName)." -Sev 'Info'
     }
-    Write-LogMessage -API $APIName -headers $Request.Headers -message "Added $addCount Confluence mapping(s)" -Sev 'Info'
 
-    return [PSCustomObject]@{ Results = "Confluence mapping table updated (v2). Deleted: $deleteCount, Added: $addCount" }
+    return [PSCustomObject]@{ Results = 'Successfully edited mapping table.' }
 }
