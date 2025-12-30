@@ -42,9 +42,12 @@ foreach ($Module in $Modules) {
 # Load ConfluenceAPI module (versioned folder structure requires explicit path to .psd1)
 $SwModule = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI\0.1.0\ConfluenceAPI.psd1'
+    $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI' | Join-Path -ChildPath '0.1.0' | Join-Path -ChildPath 'ConfluenceAPI.psd1'
     Write-Information "ConfluenceAPI: Loading from path: $ConfluenceAPIPath"
     Write-Information "ConfluenceAPI: Path exists: $(Test-Path $ConfluenceAPIPath)"
+    # List directory to verify structure
+    $ConfluenceAPIDir = Split-Path $ConfluenceAPIPath -Parent
+    Write-Information "ConfluenceAPI: Directory contents: $(Get-ChildItem $ConfluenceAPIDir -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Join-String -Separator ', ')"
     Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop
     $SwModule.Stop()
     $Timings['Module_ConfluenceAPI'] = $SwModule.Elapsed.TotalMilliseconds
