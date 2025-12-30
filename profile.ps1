@@ -24,7 +24,7 @@ if ($hasAppInsights) {
 # Import modules
 $SwModules = [System.Diagnostics.Stopwatch]::StartNew()
 $ModulesPath = Join-Path $PSScriptRoot 'Modules'
-$Modules = @('CIPPCore', 'CippExtensions', 'ConfluenceAPI', 'AzBobbyTables')
+$Modules = @('CIPPCore', 'CippExtensions', 'AzBobbyTables')
 foreach ($Module in $Modules) {
     $SwModule = [System.Diagnostics.Stopwatch]::StartNew()
     try {
@@ -38,6 +38,20 @@ foreach ($Module in $Modules) {
         Write-Warning "FAILED to load module $Module : $($_.Exception.Message)"
         Write-Error $_.Exception.Message
     }
+}
+# Load ConfluenceAPI module (versioned folder structure requires explicit path to .psd1)
+$SwModule = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI\0.1.0\ConfluenceAPI.psd1'
+    Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop
+    $SwModule.Stop()
+    $Timings['Module_ConfluenceAPI'] = $SwModule.Elapsed.TotalMilliseconds
+    Write-Information 'Successfully loaded module: ConfluenceAPI'
+} catch {
+    $SwModule.Stop()
+    $Timings['Module_ConfluenceAPI'] = $SwModule.Elapsed.TotalMilliseconds
+    Write-Warning "FAILED to load module ConfluenceAPI: $($_.Exception.Message)"
+    Write-Error $_.Exception.Message
 }
 $SwModules.Stop()
 $Timings['AllModules'] = $SwModules.Elapsed.TotalMilliseconds
