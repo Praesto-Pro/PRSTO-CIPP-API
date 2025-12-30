@@ -152,6 +152,15 @@ function Invoke-ConfluenceExtensionSync {
         $CompanyResult.Logs.Add('Loaded cached M365 data')
 
         # Phase 5: Sync each enabled data type with error isolation
+        # Debug: Check if ConfluenceAPI functions are available
+        $syncCmd = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
+        if ($syncCmd) {
+            $cmdParams = $syncCmd.Parameters.Keys -join ', '
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG: Sync-ConfluenceUserInventory available. Module: $($syncCmd.Module.Name), Params: $cmdParams" -Sev 'Debug'
+        } else {
+            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'DEBUG: Sync-ConfluenceUserInventory NOT FOUND at runtime!' -Sev 'Error'
+        }
+
         # 5a: User Inventory
         if ($confluenceConfig.SyncUsers -ne $false) {
             try {
