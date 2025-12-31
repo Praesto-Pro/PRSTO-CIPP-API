@@ -43,34 +43,9 @@ foreach ($Module in $Modules) {
 $SwModule = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI' | Join-Path -ChildPath '0.1.0' | Join-Path -ChildPath 'ConfluenceAPI.psd1'
-    Write-Information "ConfluenceAPI: Loading from path: $ConfluenceAPIPath"
-    Write-Information "ConfluenceAPI: Path exists: $(Test-Path $ConfluenceAPIPath)"
-    # List directory contents including subdirectories
-    $ConfluenceAPIDir = Split-Path $ConfluenceAPIPath -Parent
-    Write-Information "ConfluenceAPI: Directory contents: $(Get-ChildItem $ConfluenceAPIDir -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Join-String -Separator ', ')"
-    $PublicDir = Join-Path $ConfluenceAPIDir 'Public'
-    $PrivateDir = Join-Path $ConfluenceAPIDir 'Private'
-    Write-Information "ConfluenceAPI: Public folder exists: $(Test-Path $PublicDir), files: $((Get-ChildItem (Join-Path $PublicDir '*.ps1') -ErrorAction SilentlyContinue).Count)"
-    Write-Information "ConfluenceAPI: Private folder exists: $(Test-Path $PrivateDir), files: $((Get-ChildItem (Join-Path $PrivateDir '*.ps1') -ErrorAction SilentlyContinue).Count)"
-    # Import with verbose to capture function loading details
-    $VerbosePreference = 'Continue'
-    Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop -Verbose 4>&1 | ForEach-Object { Write-Information "ConfluenceAPI-Verbose: $_" }
-    $VerbosePreference = 'SilentlyContinue'
+    Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop
     $SwModule.Stop()
     $Timings['Module_ConfluenceAPI'] = $SwModule.Elapsed.TotalMilliseconds
-    # Count all exported functions from the module
-    $exportedFunctions = (Get-Module ConfluenceAPI).ExportedFunctions.Keys
-    Write-Information "ConfluenceAPI: Exported $($exportedFunctions.Count) functions"
-    # Verify specific sync function loaded correctly
-    $syncFunc = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
-    if ($syncFunc) {
-        $params = $syncFunc.Parameters.Keys -join ', '
-        Write-Information "ConfluenceAPI: Sync-ConfluenceUserInventory loaded. Module: $($syncFunc.ModuleName), Params: $params"
-    } else {
-        Write-Warning 'ConfluenceAPI: Sync-ConfluenceUserInventory NOT FOUND after module load!'
-        # List what was exported
-        Write-Warning "ConfluenceAPI: Available functions: $($exportedFunctions -join ', ')"
-    }
     Write-Information 'Successfully loaded module: ConfluenceAPI'
 } catch {
     $SwModule.Stop()

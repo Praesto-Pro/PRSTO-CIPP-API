@@ -63,23 +63,6 @@ function Invoke-ConfluenceExtensionSync {
     # (Sync functions use SupportsShouldProcess which requires this in Azure Functions)
     $ConfirmPreference = 'None'
 
-    # CRITICAL DEBUG: Check ConfluenceAPI module state at entry
-    $confluenceModule = Get-Module -Name 'ConfluenceAPI' -ErrorAction SilentlyContinue
-    if ($confluenceModule) {
-        $exportedCount = $confluenceModule.ExportedFunctions.Count
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MODULE CHECK: ConfluenceAPI loaded. Version: $($confluenceModule.Version), Exported: $exportedCount functions" -Sev 'Info'
-    } else {
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'MODULE CHECK: ConfluenceAPI module NOT LOADED!' -Sev 'Error'
-    }
-    # Check specific function
-    $syncUserCmd = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
-    if ($syncUserCmd) {
-        $paramList = $syncUserCmd.Parameters.Keys -join ', '
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "FUNCTION CHECK: Sync-ConfluenceUserInventory found. Module: $($syncUserCmd.ModuleName), Params: $paramList" -Sev 'Info'
-    } else {
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'FUNCTION CHECK: Sync-ConfluenceUserInventory NOT FOUND!' -Sev 'Error'
-    }
-
     # Phase 1: Initialize result tracking with Generic Lists for O(1) append
     # Note: Name will be updated to display name once cache is loaded (matches Hudu pattern)
     Write-Verbose "Initializing Confluence extension sync for tenant '$TenantFilter'"
@@ -158,14 +141,6 @@ function Invoke-ConfluenceExtensionSync {
             return $CompanyResult
         }
 
-        # Debug: Log what's in the cache
-        $cacheKeys = if ($ExtensionCache -is [hashtable]) { $ExtensionCache.Keys -join ', ' } else { ($ExtensionCache.PSObject.Properties.Name -join ', ') }
-        $userCount = @($ExtensionCache.Users).Count
-        $deviceCount = @($ExtensionCache.Devices).Count
-        $licenseCount = @($ExtensionCache.Licenses).Count
-        $groupCount = @($ExtensionCache.Groups).Count
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "CACHE LOADED: Keys=[$cacheKeys] Users=$userCount, Devices=$deviceCount, Licenses=$licenseCount, Groups=$groupCount" -Sev 'Info'
-
         # Update Name to display name from cache (matches Hudu pattern using $Tenant.displayName)
         if ($ExtensionCache.Tenant -and $ExtensionCache.Tenant.displayName) {
             $CompanyResult.Name = $ExtensionCache.Tenant.displayName
@@ -182,25 +157,23 @@ function Invoke-ConfluenceExtensionSync {
             try {
                 $users = @($ExtensionCache.Users)
                 $userCount = $users.Count
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: Starting. UserCount=$userCount, SpaceKey='$SpaceKey'" -Sev 'Info'
+                Write-Verbose "Syncing user inventory ($userCount users)"
 
                 if ($userCount -gt 0) {
                     $syncParams = @{
                         SpaceKey = $SpaceKey
                         Users    = $users
                     }
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: Params built. Keys: $($syncParams.Keys -join ', ')" -Sev 'Info'
 
                     # Add optional parameters if available in cache
                     if ($ExtensionCache.Licenses) {
                         $syncParams['Licenses'] = @($ExtensionCache.Licenses)
                     }
 
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: About to call Sync-ConfluenceUserInventory with splatting" -Sev 'Info'
                     $syncResult = Sync-ConfluenceUserInventory @syncParams
                     $CompanyResult.Users = $userCount
                     $CompanyResult.Logs.Add("User sync complete: $userCount users")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced to space '$SpaceKey' (Action: $($syncResult.Action))" -Sev 'Info'
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
                     $CompanyResult.Logs.Add('User sync skipped: no users in cache')
@@ -208,13 +181,9 @@ function Invoke-ConfluenceExtensionSync {
                 }
             }
             catch {
-                $errMsg = $_.Exception.Message
-                $errLine = $_.InvocationInfo.ScriptLineNumber
-                $errScript = $_.InvocationInfo.ScriptName
-                $errCmd = $_.InvocationInfo.InvocationName
-                $CompanyResult.Errors.Add("User sync failed: $errMsg")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync failed: $errMsg" -Sev 'Error'
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC ERROR DETAIL: Script=$errScript, Line=$errLine, Cmd=$errCmd, StackTrace=$($_.ScriptStackTrace)" -Sev 'Error'
+                $CompanyResult.Errors.Add("User sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync failed: $_" -Sev 'Error'
+                Write-Verbose "User sync error: $_"
             }
         }
         else {
@@ -241,12 +210,9 @@ function Invoke-ConfluenceExtensionSync {
                 }
             }
             catch {
-                $errMsg = $_.Exception.Message
-                $errLine = $_.InvocationInfo.ScriptLineNumber
-                $errScript = $_.InvocationInfo.ScriptName
-                $CompanyResult.Errors.Add("Device sync failed: $errMsg")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync failed: $errMsg" -Sev 'Error'
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEVICE SYNC ERROR DETAIL: Script=$errScript, Line=$errLine, StackTrace=$($_.ScriptStackTrace)" -Sev 'Error'
+                $CompanyResult.Errors.Add("Device sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync failed: $_" -Sev 'Error'
+                Write-Verbose "Device sync error: $_"
             }
         }
         else {
