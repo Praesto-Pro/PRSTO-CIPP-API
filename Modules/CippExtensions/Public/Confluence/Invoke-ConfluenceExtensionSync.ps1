@@ -158,6 +158,14 @@ function Invoke-ConfluenceExtensionSync {
             return $CompanyResult
         }
 
+        # Debug: Log what's in the cache
+        $cacheKeys = if ($ExtensionCache -is [hashtable]) { $ExtensionCache.Keys -join ', ' } else { ($ExtensionCache.PSObject.Properties.Name -join ', ') }
+        $userCount = @($ExtensionCache.Users).Count
+        $deviceCount = @($ExtensionCache.Devices).Count
+        $licenseCount = @($ExtensionCache.Licenses).Count
+        $groupCount = @($ExtensionCache.Groups).Count
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "CACHE LOADED: Keys=[$cacheKeys] Users=$userCount, Devices=$deviceCount, Licenses=$licenseCount, Groups=$groupCount" -Sev 'Info'
+
         # Update Name to display name from cache (matches Hudu pattern using $Tenant.displayName)
         if ($ExtensionCache.Tenant -and $ExtensionCache.Tenant.displayName) {
             $CompanyResult.Name = $ExtensionCache.Tenant.displayName
