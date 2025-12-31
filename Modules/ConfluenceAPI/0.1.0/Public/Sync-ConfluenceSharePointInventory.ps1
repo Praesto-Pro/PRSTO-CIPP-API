@@ -111,7 +111,17 @@ function Sync-ConfluenceSharePointInventory {
     $escapedTitle = $PageTitle -replace "'", "''"
     $cql = "space = '$escapedSpaceKey' AND title = '$escapedTitle' AND type = page"
     Write-Verbose "Searching for existing page with CQL: $cql"
-    $existingPage = Search-Confluence -CQL $cql | Select-Object -First 1
+
+    try {
+        $searchResults = Search-Confluence -CQL $cql
+        $searchCount = if ($searchResults) { @($searchResults).Count } else { 0 }
+        Write-Verbose "Search returned $searchCount result(s)"
+        $existingPage = $searchResults | Select-Object -First 1
+    }
+    catch {
+        Write-Verbose "Search failed: $($_.Exception.Message)"
+        $existingPage = $null
+    }
 
     if ($existingPage) {
         # Check cache for change detection (Story 10.4)

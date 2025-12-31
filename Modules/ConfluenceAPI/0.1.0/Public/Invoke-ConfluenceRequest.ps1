@@ -170,6 +170,23 @@ function Invoke-ConfluenceRequest {
                     }
                 }
 
+                # Try to read API response body for detailed error info
+                $responseBody = $null
+                if ($_.Exception.Response) {
+                    try {
+                        $stream = $_.Exception.Response.GetResponseStream()
+                        if ($stream) {
+                            $reader = [System.IO.StreamReader]::new($stream)
+                            $responseBody = $reader.ReadToEnd()
+                            $reader.Close()
+                            $stream.Close()
+                        }
+                    }
+                    catch {
+                        # Silently continue - response body extraction is best-effort
+                    }
+                }
+
                 # Determine if error is retryable
                 $isRetryable = $false
                 $delay = 0
@@ -195,7 +212,7 @@ function Invoke-ConfluenceRequest {
                 }
 
                 # Non-retryable error or retries exhausted - throw with actionable message
-                $errorMessage = switch ($statusCode) {
+                $baseMessage = switch ($statusCode) {
                     400 { "Bad request. Check your request parameters. Endpoint: $Endpoint" }
                     401 { "Authentication failed. Verify API key." }
                     403 { "Access forbidden. Check permissions." }
@@ -203,6 +220,13 @@ function Invoke-ConfluenceRequest {
                     429 { "Rate limit exceeded after $maxRetries retries. Try again later." }
                     { $_ -ge 500 -and $_ -lt 600 } { "Confluence server error after $maxRetries retries. Try again later." }
                     default { "API request failed: $($_.Exception.Message)" }
+                }
+
+                # Include API response body in error if available (helps debug 400 errors)
+                $errorMessage = if ($responseBody) {
+                    "$baseMessage | API Response: $responseBody"
+                } else {
+                    $baseMessage
                 }
 
                 $PSCmdlet.ThrowTerminatingError(
