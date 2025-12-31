@@ -63,6 +63,23 @@ function Invoke-ConfluenceExtensionSync {
     # (Sync functions use SupportsShouldProcess which requires this in Azure Functions)
     $ConfirmPreference = 'None'
 
+    # CRITICAL DEBUG: Check ConfluenceAPI module state at entry
+    $confluenceModule = Get-Module -Name 'ConfluenceAPI' -ErrorAction SilentlyContinue
+    if ($confluenceModule) {
+        $exportedCount = $confluenceModule.ExportedFunctions.Count
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MODULE CHECK: ConfluenceAPI loaded. Version: $($confluenceModule.Version), Exported: $exportedCount functions" -Sev 'Info'
+    } else {
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'MODULE CHECK: ConfluenceAPI module NOT LOADED!' -Sev 'Error'
+    }
+    # Check specific function
+    $syncUserCmd = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
+    if ($syncUserCmd) {
+        $paramList = $syncUserCmd.Parameters.Keys -join ', '
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "FUNCTION CHECK: Sync-ConfluenceUserInventory found. Module: $($syncUserCmd.ModuleName), Params: $paramList" -Sev 'Info'
+    } else {
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'FUNCTION CHECK: Sync-ConfluenceUserInventory NOT FOUND!' -Sev 'Error'
+    }
+
     # Phase 1: Initialize result tracking with Generic Lists for O(1) append
     # Note: Name will be updated to display name once cache is loaded (matches Hudu pattern)
     Write-Verbose "Initializing Confluence extension sync for tenant '$TenantFilter'"
@@ -152,15 +169,6 @@ function Invoke-ConfluenceExtensionSync {
         $CompanyResult.Logs.Add('Loaded cached M365 data')
 
         # Phase 5: Sync each enabled data type with error isolation
-        # Debug: Check if ConfluenceAPI functions are available
-        $syncCmd = Get-Command 'Sync-ConfluenceUserInventory' -ErrorAction SilentlyContinue
-        if ($syncCmd) {
-            $cmdParams = $syncCmd.Parameters.Keys -join ', '
-            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG: Sync-ConfluenceUserInventory available. Module: $($syncCmd.Module.Name), Params: $cmdParams" -Sev 'Debug'
-        } else {
-            Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'DEBUG: Sync-ConfluenceUserInventory NOT FOUND at runtime!' -Sev 'Error'
-        }
-
         # 5a: User Inventory
         if ($confluenceConfig.SyncUsers -ne $false) {
             try {
