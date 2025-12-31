@@ -174,19 +174,21 @@ function Invoke-ConfluenceExtensionSync {
             try {
                 $users = @($ExtensionCache.Users)
                 $userCount = $users.Count
-                Write-Verbose "Syncing user inventory ($userCount users)"
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: Starting. UserCount=$userCount, SpaceKey='$SpaceKey'" -Sev 'Info'
 
                 if ($userCount -gt 0) {
                     $syncParams = @{
                         SpaceKey = $SpaceKey
                         Users    = $users
                     }
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: Params built. Keys: $($syncParams.Keys -join ', ')" -Sev 'Info'
 
                     # Add optional parameters if available in cache
                     if ($ExtensionCache.Licenses) {
                         $syncParams['Licenses'] = @($ExtensionCache.Licenses)
                     }
 
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC: About to call Sync-ConfluenceUserInventory with splatting" -Sev 'Info'
                     $syncResult = Sync-ConfluenceUserInventory @syncParams
                     $CompanyResult.Users = $userCount
                     $CompanyResult.Logs.Add("User sync complete: $userCount users")
@@ -283,7 +285,7 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing MFA report ($($users.Count) users)"
 
                 if ($users.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -Users $users
+                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -MFAData $users
                     $CompanyResult.Logs.Add("MFA sync complete: $($users.Count) users")
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($users.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
@@ -314,7 +316,7 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing Teams inventory ($teamsCount teams)"
 
                 if ($teamsCount -gt 0) {
-                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -Teams $teamsArray
+                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -TeamsData $teamsArray
                     $CompanyResult.Logs.Add("Teams sync complete: $teamsCount teams")
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync complete: $teamsCount teams synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
@@ -342,7 +344,7 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing SharePoint/OneDrive inventory ($($oneDriveData.Count) sites)"
 
                 if ($oneDriveData.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -Sites $oneDriveData
+                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $oneDriveData
                     $CompanyResult.Logs.Add("SharePoint sync complete: $($oneDriveData.Count) sites")
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync complete: $($oneDriveData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
