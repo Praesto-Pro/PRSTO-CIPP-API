@@ -208,9 +208,13 @@ function Invoke-ConfluenceExtensionSync {
                 }
             }
             catch {
-                $CompanyResult.Errors.Add("User sync failed: $_")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync failed: $_" -Sev 'Error'
-                Write-Verbose "User sync error: $_"
+                $errMsg = $_.Exception.Message
+                $errLine = $_.InvocationInfo.ScriptLineNumber
+                $errScript = $_.InvocationInfo.ScriptName
+                $errCmd = $_.InvocationInfo.InvocationName
+                $CompanyResult.Errors.Add("User sync failed: $errMsg")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync failed: $errMsg" -Sev 'Error'
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "USER SYNC ERROR DETAIL: Script=$errScript, Line=$errLine, Cmd=$errCmd, StackTrace=$($_.ScriptStackTrace)" -Sev 'Error'
             }
         }
         else {
@@ -237,9 +241,12 @@ function Invoke-ConfluenceExtensionSync {
                 }
             }
             catch {
-                $CompanyResult.Errors.Add("Device sync failed: $_")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync failed: $_" -Sev 'Error'
-                Write-Verbose "Device sync error: $_"
+                $errMsg = $_.Exception.Message
+                $errLine = $_.InvocationInfo.ScriptLineNumber
+                $errScript = $_.InvocationInfo.ScriptName
+                $CompanyResult.Errors.Add("Device sync failed: $errMsg")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync failed: $errMsg" -Sev 'Error'
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEVICE SYNC ERROR DETAIL: Script=$errScript, Line=$errLine, StackTrace=$($_.ScriptStackTrace)" -Sev 'Error'
             }
         }
         else {
