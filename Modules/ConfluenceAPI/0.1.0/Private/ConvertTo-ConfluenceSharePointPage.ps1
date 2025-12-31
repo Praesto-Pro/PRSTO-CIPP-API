@@ -110,8 +110,11 @@ function ConvertTo-ConfluenceSharePointPage {
 
     # Transform to table format
     $tableData = foreach ($site in $SharePointData) {
+        # Get URL first - support both webUrl (SharePoint) and siteUrl (OneDrive/SharePoint Usage Report)
+        $siteUrl = if ($site.webUrl) { $site.webUrl } elseif ($site.siteUrl) { $site.siteUrl } else { '' }
+
         # Determine site name with fallbacks
-        # Support both SharePoint site properties (displayName) and OneDrive Usage Report (ownerDisplayName)
+        # Support SharePoint site (displayName), Usage Reports (ownerDisplayName), or extract from URL
         $siteName = if ($site.displayName) {
             $site.displayName
         } elseif ($site.ownerDisplayName) {
@@ -122,12 +125,20 @@ function ConvertTo-ConfluenceSharePointPage {
             $site.ownerPrincipalName
         } elseif ($site.id) {
             $site.id
+        } elseif ($siteUrl) {
+            # Extract site name from URL (e.g., /sites/Marketing -> Marketing, /personal/john_contoso_com -> john_contoso_com)
+            if ($siteUrl -match '/sites/([^/]+)') {
+                $matches[1]
+            } elseif ($siteUrl -match '/personal/([^/]+)') {
+                $matches[1] -replace '_', ' '
+            } elseif ($siteUrl -match '/teams/([^/]+)') {
+                $matches[1]
+            } else {
+                'Unknown Site'
+            }
         } else {
             'Unknown Site'
         }
-
-        # Get URL - support both webUrl (SharePoint) and siteUrl (OneDrive Usage Report)
-        $siteUrl = if ($site.webUrl) { $site.webUrl } elseif ($site.siteUrl) { $site.siteUrl } else { '' }
 
         # Determine site type from template or siteType property
         $siteType = if ($site.template) {

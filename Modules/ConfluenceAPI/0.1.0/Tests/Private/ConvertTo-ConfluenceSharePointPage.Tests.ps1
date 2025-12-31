@@ -111,9 +111,9 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             $result | Should Match 'site-guid-12345'
         }
 
-        It 'Uses Unknown Site when all name properties are missing' {
+        It 'Uses Unknown Site when no name properties and no URL' {
             $site = [PSCustomObject]@{
-                webUrl = 'https://contoso.sharepoint.com/sites/test'
+                storageUsedInBytes = 1000
             }
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
             $result | Should Match 'Unknown Site'
@@ -135,6 +135,24 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             }
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
             $result | Should Match 'john@contoso.com'
+        }
+
+        It 'Extracts site name from /sites/ URL when no name property' {
+            $site = [PSCustomObject]@{
+                siteUrl = 'https://contoso.sharepoint.com/sites/Marketing'
+                storageUsedInBytes = 1000000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'Marketing'
+        }
+
+        It 'Extracts site name from /personal/ URL when no name property' {
+            $site = [PSCustomObject]@{
+                siteUrl = 'https://contoso-my.sharepoint.com/personal/john_doe_contoso_com'
+                storageUsedInBytes = 1000000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'john doe contoso com'
         }
 
         It 'Handles special characters in site name' {

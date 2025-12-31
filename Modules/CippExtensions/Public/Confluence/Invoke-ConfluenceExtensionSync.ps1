@@ -317,27 +317,27 @@ function Invoke-ConfluenceExtensionSync {
             $CompanyResult.Logs.Add('Teams sync skipped: disabled in configuration')
         }
 
-        # 5f: SharePoint Inventory
+        # 5f: SharePoint/OneDrive Inventory
         if ($confluenceConfig.SyncSharePoint -ne $false) {
             try {
-                # SharePoint data comes from OneDriveUsage and possibly SPOSites
+                # OneDriveUsage contains personal OneDrive sites from the extension cache
                 $oneDriveData = @($ExtensionCache.OneDriveUsage)
-                Write-Verbose "Syncing SharePoint/OneDrive inventory ($($oneDriveData.Count) sites)"
+                Write-Verbose "Syncing OneDrive inventory ($($oneDriveData.Count) sites)"
 
                 if ($oneDriveData.Count -gt 0) {
                     $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $oneDriveData
-                    $CompanyResult.Logs.Add("SharePoint sync complete: $($oneDriveData.Count) sites")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync complete: $($oneDriveData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    $CompanyResult.Logs.Add("OneDrive sync complete: $($oneDriveData.Count) sites")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sync complete: $($oneDriveData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('SharePoint sync skipped: no OneDrive/SharePoint data in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SharePoint sync skipped: no data in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('OneDrive sync skipped: no OneDrive data in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'OneDrive sync skipped: no data in cache' -Sev 'Debug'
                 }
             }
             catch {
-                $CompanyResult.Errors.Add("SharePoint sync failed: $_")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync failed: $_" -Sev 'Error'
-                Write-Verbose "SharePoint sync error: $_"
+                $CompanyResult.Errors.Add("OneDrive sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sync failed: $_" -Sev 'Error'
+                Write-Verbose "OneDrive sync error: $_"
             }
         }
         else {
