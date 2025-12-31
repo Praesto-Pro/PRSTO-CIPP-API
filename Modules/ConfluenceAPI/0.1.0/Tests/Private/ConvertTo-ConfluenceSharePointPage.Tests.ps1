@@ -119,6 +119,24 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             $result | Should Match 'Unknown Site'
         }
 
+        It 'Maps ownerDisplayName from OneDrive Usage Report' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = 'John Doe'
+                siteUrl = 'https://contoso-my.sharepoint.com/personal/john_contoso_com'
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'John Doe'
+        }
+
+        It 'Falls back to ownerPrincipalName from OneDrive Usage Report' {
+            $site = [PSCustomObject]@{
+                ownerPrincipalName = 'john@contoso.com'
+                siteUrl = 'https://contoso-my.sharepoint.com/personal/john_contoso_com'
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'john@contoso.com'
+        }
+
         It 'Handles special characters in site name' {
             $site = [PSCustomObject]@{
                 displayName = 'Sales & Marketing Site'
@@ -157,6 +175,15 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             }
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
             $result | Should Match 'marketing/subsite'
+        }
+
+        It 'Maps siteUrl from OneDrive Usage Report' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = 'Jane Smith'
+                siteUrl = 'https://contoso-my.sharepoint.com/personal/jane_contoso_com'
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'contoso-my.sharepoint.com'
         }
     }
 
@@ -381,6 +408,15 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             }
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
             $result | Should Match '2024-12-14'
+        }
+
+        It 'Maps lastActivityDate from OneDrive Usage Report' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = 'John Doe'
+                lastActivityDate = '2024-12-20'
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match '2024-12-20'
         }
     }
 

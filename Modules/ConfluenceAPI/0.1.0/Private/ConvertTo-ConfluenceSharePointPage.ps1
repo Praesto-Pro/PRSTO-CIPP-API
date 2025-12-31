@@ -16,9 +16,13 @@ function ConvertTo-ConfluenceSharePointPage {
         Returns an ADF JSON string that can be used directly with
         New-ConfluencePage -Body parameter.
     .PARAMETER SharePointData
-        Array of CIPP SharePoint site objects from the SharePoint Report API.
-        Expected properties: displayName, name, webUrl, template, siteType,
-        storageUsedInBytes, lastModifiedDateTime.
+        Array of CIPP SharePoint/OneDrive site objects.
+
+        Supports two data sources with different property names:
+        - SharePoint Sites API: displayName, name, webUrl, template, siteType,
+          storageUsedInBytes, lastModifiedDateTime
+        - OneDrive Usage Report (getOneDriveUsageAccountDetail): ownerDisplayName,
+          ownerPrincipalName, siteUrl, storageUsedInBytes, lastActivityDate
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
         Table columns: Site, URL, Type, Storage, Last Modified
@@ -107,18 +111,23 @@ function ConvertTo-ConfluenceSharePointPage {
     # Transform to table format
     $tableData = foreach ($site in $SharePointData) {
         # Determine site name with fallbacks
+        # Support both SharePoint site properties (displayName) and OneDrive Usage Report (ownerDisplayName)
         $siteName = if ($site.displayName) {
             $site.displayName
+        } elseif ($site.ownerDisplayName) {
+            $site.ownerDisplayName
         } elseif ($site.name) {
             $site.name
+        } elseif ($site.ownerPrincipalName) {
+            $site.ownerPrincipalName
         } elseif ($site.id) {
             $site.id
         } else {
             'Unknown Site'
         }
 
-        # Get URL
-        $siteUrl = if ($site.webUrl) { $site.webUrl } else { '' }
+        # Get URL - support both webUrl (SharePoint) and siteUrl (OneDrive Usage Report)
+        $siteUrl = if ($site.webUrl) { $site.webUrl } elseif ($site.siteUrl) { $site.siteUrl } else { '' }
 
         # Determine site type from template or siteType property
         $siteType = if ($site.template) {
@@ -163,13 +172,22 @@ function ConvertTo-ConfluenceSharePointPage {
         }
 
         # Format last modified date with error handling
-        $lastModified = if ($site.lastModifiedDateTime) {
+        # Support both lastModifiedDateTime (SharePoint) and lastActivityDate (OneDrive Usage Report)
+        $dateValue = if ($site.lastModifiedDateTime) {
+            $site.lastModifiedDateTime
+        } elseif ($site.lastActivityDate) {
+            $site.lastActivityDate
+        } else {
+            $null
+        }
+
+        $lastModified = if ($dateValue) {
             try {
-                $date = [datetime]::Parse($site.lastModifiedDateTime)
+                $date = [datetime]::Parse($dateValue)
                 $date.ToString('yyyy-MM-dd')
             } catch {
                 # Fallback: try to extract first 10 chars if ISO format
-                $dateStr = $site.lastModifiedDateTime.ToString()
+                $dateStr = $dateValue.ToString()
                 if ($dateStr.Length -ge 10) {
                     $dateStr.Substring(0, 10)
                 } else {
