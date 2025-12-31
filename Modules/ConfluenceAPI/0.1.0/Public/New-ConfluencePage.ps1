@@ -7,8 +7,9 @@ function New-ConfluencePage {
         the page as a child of an existing page.
 
         Supports -WhatIf to preview the operation without making changes.
-    .PARAMETER SpaceId
-        The unique ID of the Confluence space to create the page in.
+    .PARAMETER SpaceKey
+        The human-readable key of the Confluence space (e.g., 'CONTOSO').
+        The function looks up the space ID automatically.
     .PARAMETER Title
         The title of the new page.
     .PARAMETER Body
@@ -18,24 +19,24 @@ function New-ConfluencePage {
         Optional parent page ID. If specified, creates the page as a child
         of the parent page.
     .EXAMPLE
-        New-ConfluencePage -SpaceId '123456' -Title 'User Inventory'
+        New-ConfluencePage -SpaceKey 'CONTOSO' -Title 'User Inventory'
 
-        Creates a new top-level page titled 'User Inventory' in the specified space.
+        Creates a new top-level page titled 'User Inventory' in the CONTOSO space.
     .EXAMPLE
-        New-ConfluencePage -SpaceId '123456' -Title 'Active Users' -ParentId '789012'
+        New-ConfluencePage -SpaceKey 'CONTOSO' -Title 'Active Users' -ParentId '789012'
 
         Creates a new child page under the specified parent.
     .EXAMPLE
-        New-ConfluencePage -SpaceId '123456' -Title 'Report' -Body '<p>Content</p>'
+        New-ConfluencePage -SpaceKey 'CONTOSO' -Title 'Report' -Body '<p>Content</p>'
 
         Creates a new page with initial content.
     .EXAMPLE
-        New-ConfluencePage -SpaceId '123456' -Title 'Test Page' -WhatIf
+        New-ConfluencePage -SpaceKey 'CONTOSO' -Title 'Test Page' -WhatIf
 
         Shows what would happen without actually creating the page.
     .EXAMPLE
         $adfJson = '{"version":1,"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello World"}]}]}'
-        New-ConfluencePage -SpaceId '123456' -Title 'ADF Page' -Body $adfJson
+        New-ConfluencePage -SpaceKey 'CONTOSO' -Title 'ADF Page' -Body $adfJson
 
         Creates a new page with ADF (Atlassian Document Format) content.
         The function automatically detects ADF JSON and sets the correct representation.
@@ -47,7 +48,7 @@ function New-ConfluencePage {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string]$SpaceId,
+        [string]$SpaceKey,
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -61,7 +62,22 @@ function New-ConfluencePage {
         [string]$ParentId
     )
 
-    Write-Verbose "Creating page '$Title' in space '$SpaceId'..."
+    Write-Verbose "Creating page '$Title' in space '$SpaceKey'..."
+
+    # Look up Space ID from SpaceKey
+    $space = Get-ConfluenceSpace -SpaceKey $SpaceKey -ErrorAction Stop
+    if (-not $space) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.Exception]::new("Space '$SpaceKey' not found."),
+                "SpaceNotFound",
+                [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                $SpaceKey
+            )
+        )
+    }
+    $SpaceId = $space.Id
+    Write-Verbose "Resolved SpaceKey '$SpaceKey' to SpaceId '$SpaceId'"
 
     # Build request body
     $requestBody = @{
@@ -108,7 +124,7 @@ function New-ConfluencePage {
     $jsonBody = $requestBody | ConvertTo-Json -Depth 10
 
     # ShouldProcess check
-    $targetDescription = "Page '$Title' in space '$SpaceId'"
+    $targetDescription = "Page '$Title' in space '$SpaceKey'"
     if (-not $PSCmdlet.ShouldProcess($targetDescription, "Create Confluence page")) {
         return $null
     }
@@ -121,20 +137,20 @@ function New-ConfluencePage {
         if ($_.Exception.Message -match '404|not found') {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
-                    [System.Exception]::new("Space with ID '$SpaceId' was not found. Verify the space ID exists."),
+                    [System.Exception]::new("Space '$SpaceKey' (ID: $SpaceId) was not found. Verify the space exists."),
                     "SpaceNotFound",
                     [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                    $SpaceId
+                    $SpaceKey
                 )
             )
         }
         if ($_.Exception.Message -match '403|forbidden|Access denied') {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
-                    [System.Exception]::new("Access denied creating page in space '$SpaceId'. Check your API permissions."),
+                    [System.Exception]::new("Access denied creating page in space '$SpaceKey'. Check your API permissions."),
                     "AccessDenied",
                     [System.Management.Automation.ErrorCategory]::PermissionDenied,
-                    $SpaceId
+                    $SpaceKey
                 )
             )
         }

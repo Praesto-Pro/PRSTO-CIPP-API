@@ -9,6 +9,7 @@ Describe 'New-ConfluencePage' {
     BeforeEach {
         InModuleScope ConfluenceAPI {
             $script:ConfluenceAPIKey = 'test-token'
+            $script:ConfluenceUserEmail = 'test@example.com'
             $script:ConfluenceBaseURL = 'https://test.atlassian.net'
         }
     }
@@ -16,13 +17,17 @@ Describe 'New-ConfluencePage' {
     AfterEach {
         InModuleScope ConfluenceAPI {
             $script:ConfluenceAPIKey = $null
+            $script:ConfluenceUserEmail = $null
             $script:ConfluenceBaseURL = $null
         }
     }
 
     Context 'Create Page with Required Parameters' {
-        It 'Creates page with SpaceId and Title' {
+        It 'Creates page with SpaceKey and Title' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '789012'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{
                         id         = '123456'
@@ -37,7 +42,7 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '789012' -Title 'New Page'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'New Page'
                 $result.Id | Should Be '123456'
                 $result.Title | Should Be 'New Page'
                 $result.SpaceId | Should Be '789012'
@@ -48,6 +53,9 @@ Describe 'New-ConfluencePage' {
 
         It 'Calls POST endpoint' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{
                         id      = '123'
@@ -58,15 +66,18 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test'
                 Assert-MockCalled Invoke-ConfluenceRequest -ParameterFilter {
                     $Endpoint -eq '/wiki/api/v2/pages' -and $Method -eq 'POST'
                 }
             }
         }
 
-        It 'Includes spaceId and title in request body' {
+        It 'Includes spaceId (looked up from SpaceKey) and title in request body' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '789'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -82,7 +93,7 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '789' -Title 'Test Title'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test Title'
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
@@ -91,6 +102,9 @@ Describe 'New-ConfluencePage' {
     Context 'Create Page with Body Content' {
         It 'Includes Body content when provided' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -106,13 +120,16 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body '<p>Content</p>'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body '<p>Content</p>'
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Sets body representation to storage for HTML content' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -128,7 +145,7 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body '<p>Test</p>'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body '<p>Test</p>'
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
@@ -137,6 +154,9 @@ Describe 'New-ConfluencePage' {
     Context 'Create Page with ADF Content' {
         It 'Sets body representation to atlas_doc_format for ADF JSON' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -153,13 +173,16 @@ Describe 'New-ConfluencePage' {
                 }
 
                 $adfJson = '{"version":1,"type":"doc","content":[]}'
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $adfJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Detects ADF JSON with content' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -176,13 +199,16 @@ Describe 'New-ConfluencePage' {
                 }
 
                 $adfJson = '{"version":1,"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}'
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $adfJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Detects ADF with whitespace formatting' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -205,13 +231,16 @@ Describe 'New-ConfluencePage' {
     "content": []
 }
 '@
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $adfJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $adfJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Uses storage format for non-ADF JSON-like content' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -229,13 +258,16 @@ Describe 'New-ConfluencePage' {
 
                 # This is JSON but not ADF (missing version:1 and type:doc)
                 $nonAdfJson = '{"name":"test","value":123}'
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $nonAdfJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $nonAdfJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Uses storage format for JSON with misleading ADF-like properties' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -254,13 +286,16 @@ Describe 'New-ConfluencePage' {
                 # This JSON has version:1 and mentions "doc" but is NOT valid ADF
                 # (type is not "doc", it's "note", and docType is a different property)
                 $misleadingJson = '{"version":1,"docType":"doc","type":"note"}'
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $misleadingJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $misleadingJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
 
         It 'Uses storage format for invalid JSON strings' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -278,7 +313,7 @@ Describe 'New-ConfluencePage' {
 
                 # This looks like it starts with { but is not valid JSON
                 $invalidJson = '{not valid json at all'
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Body $invalidJson
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Body $invalidJson
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 1
             }
         }
@@ -287,6 +322,9 @@ Describe 'New-ConfluencePage' {
     Context 'Create Child Page' {
         It 'Includes ParentId when creating child page' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     param($Endpoint, $Method, $Body)
                     $bodyObj = $Body | ConvertFrom-Json
@@ -304,13 +342,16 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Child Page' -ParentId '111222'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Child Page' -ParentId '111222'
                 $result.ParentId | Should Be '111222'
             }
         }
 
         It 'Returns parent information in result' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{
                         id         = '123'
@@ -323,7 +364,7 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Child Page' -ParentId '999'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Child Page' -ParentId '999'
                 $result.ParentId | Should Be '999'
                 $result.ParentType | Should Be 'page'
             }
@@ -333,22 +374,28 @@ Describe 'New-ConfluencePage' {
     Context 'WhatIf Support' {
         It 'Does not call API when WhatIf is specified' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     throw "Should not be called"
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -WhatIf
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -WhatIf
                 Assert-MockCalled Invoke-ConfluenceRequest -Times 0
             }
         }
 
         It 'Returns null when WhatIf is specified' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{ id = '123' }
                 }
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -WhatIf
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -WhatIf
                 $result | Should Be $null
             }
         }
@@ -357,6 +404,9 @@ Describe 'New-ConfluencePage' {
     Context 'Return Value' {
         It 'Returns PSCustomObject with correct properties' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '888'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{
                         id         = '999'
@@ -371,7 +421,7 @@ Describe 'New-ConfluencePage' {
                     }
                 }
 
-                $result = New-ConfluencePage -SpaceId '888' -Title 'Created Page'
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Created Page'
                 $propNames = $result.PSObject.Properties.Name
 
                 ($propNames -contains 'Id') | Should Be $true
@@ -388,33 +438,52 @@ Describe 'New-ConfluencePage' {
     }
 
     Context 'Error Handling' {
-        It 'Throws when space not found' {
+        It 'Throws when space not found via Get-ConfluenceSpace' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    return $null
+                }
+
+                { New-ConfluencePage -SpaceKey 'NOTFOUND' -Title 'Test' } | Should Throw 'not found'
+            }
+        }
+
+        It 'Throws when API returns 404' {
+            InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '999'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     throw [System.Exception]::new('Resource not found (404)')
                 }
 
-                { New-ConfluencePage -SpaceId '999' -Title 'Test' } | Should Throw 'was not found'
+                { New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' } | Should Throw 'was not found'
             }
         }
 
         It 'Throws when access denied' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     throw [System.Exception]::new('Access forbidden (403)')
                 }
 
-                { New-ConfluencePage -SpaceId '456' -Title 'Test' } | Should Throw 'Access denied'
+                { New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' } | Should Throw 'Access denied'
             }
         }
 
         It 'Throws when null response received' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     return $null
                 }
 
-                { New-ConfluencePage -SpaceId '456' -Title 'Test' } | Should Throw 'Failed to create'
+                { New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' } | Should Throw 'Failed to create'
             }
         }
     }
@@ -422,6 +491,9 @@ Describe 'New-ConfluencePage' {
     Context 'Verbose Output' {
         It 'Logs verbose message when creating page' {
             InModuleScope ConfluenceAPI {
+                Mock Get-ConfluenceSpace {
+                    [PSCustomObject]@{ Id = '456'; Key = 'TEST'; Name = 'Test Space' }
+                }
                 Mock Invoke-ConfluenceRequest {
                     @{
                         id      = '123'
@@ -433,7 +505,7 @@ Describe 'New-ConfluencePage' {
                 }
                 Mock Write-Verbose { } -Verifiable
 
-                $result = New-ConfluencePage -SpaceId '456' -Title 'Test' -Verbose
+                $result = New-ConfluencePage -SpaceKey 'TEST' -Title 'Test' -Verbose
                 Assert-MockCalled Write-Verbose
             }
         }
