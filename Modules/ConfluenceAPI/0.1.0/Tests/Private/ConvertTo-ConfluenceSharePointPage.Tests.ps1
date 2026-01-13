@@ -111,9 +111,18 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             $result | Should Match 'site-guid-12345'
         }
 
-        It 'Uses Unknown Site when no name properties and no URL' {
+        It 'Uses storage-based name when no name properties, no URL, but has storage' {
             $site = [PSCustomObject]@{
                 storageUsedInBytes = 1000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            # When all identifying fields are empty but storage exists, show storage-based identifier
+            $result | Should Match 'Site \(1000 bytes\)'
+        }
+
+        It 'Uses Unknown Site when no name properties, no URL, and no storage' {
+            $site = [PSCustomObject]@{
+                storageUsedInBytes = 0
             }
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
             $result | Should Match 'Unknown Site'
@@ -600,6 +609,77 @@ Describe 'ConvertTo-ConfluenceSharePointPage' {
             )
             $result = ConvertTo-ConfluenceSharePointPage -SharePointData $sites
             $result | Should Match 'Total Storage: 6.00 GB'
+        }
+    }
+
+    Context 'Pseudonymized Data Handling (M365 Privacy Settings)' {
+        It 'Skips GUID values in ownerDisplayName' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = '12345678-1234-1234-1234-123456789012'
+                ownerPrincipalName = 'john@contoso.com'
+                storageUsedInBytes = 1000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            # Should skip the GUID and use ownerPrincipalName instead
+            $result | Should Match 'john@contoso.com'
+            $result | Should Not Match '12345678-1234-1234-1234-123456789012'
+        }
+
+        It 'Skips GUID values in siteUrl' {
+            $site = [PSCustomObject]@{
+                displayName = 'Test Site'
+                siteUrl = '12345678-1234-1234-1234-123456789012'
+                storageUsedInBytes = 1000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            # Should use displayName and have empty URL
+            $result | Should Match 'Test Site'
+        }
+
+        It 'Shows privacy warning when data is pseudonymized' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = '12345678-1234-1234-1234-123456789012'
+                ownerPrincipalName = 'abcdef12-3456-7890-abcd-ef1234567890'
+                siteUrl = 'aaaabbbb-cccc-dddd-eeee-ffff00001111'
+                storageUsedInBytes = 1000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'privacy settings'
+            $result | Should Match 'Display de-identified'
+        }
+
+        It 'Falls back to storage-based name when all fields are GUIDs' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = '12345678-1234-1234-1234-123456789012'
+                ownerPrincipalName = 'abcdef12-3456-7890-abcd-ef1234567890'
+                siteUrl = 'aaaabbbb-cccc-dddd-eeee-ffff00001111'
+                storageUsedInBytes = 5242880
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'Site \(5242880 bytes\)'
+        }
+
+        It 'Uses OneDrive type when storageAllocatedInBytes present but no template' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = '12345678-1234-1234-1234-123456789012'
+                storageUsedInBytes = 1000
+                storageAllocatedInBytes = 1000000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Match 'OneDrive'
+            $result | Should Not Match 'Unknown'
+        }
+
+        It 'Does not show privacy warning when data is not pseudonymized' {
+            $site = [PSCustomObject]@{
+                ownerDisplayName = 'John Doe'
+                ownerPrincipalName = 'john@contoso.com'
+                siteUrl = 'https://contoso-my.sharepoint.com/personal/john_contoso_com'
+                storageUsedInBytes = 1000
+            }
+            $result = ConvertTo-ConfluenceSharePointPage -SharePointData @($site)
+            $result | Should Not Match 'privacy settings'
+            $result | Should Match 'John Doe'
         }
     }
 }

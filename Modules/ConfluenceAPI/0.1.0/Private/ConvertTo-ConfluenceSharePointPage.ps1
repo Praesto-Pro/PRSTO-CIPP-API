@@ -108,22 +108,61 @@ function ConvertTo-ConfluenceSharePointPage {
     $summaryText = "Total Sites: $totalSites | Total Storage: $totalStorageDisplay"
     $summary = New-ADFParagraph -Text $summaryText
 
+    # Check if data appears to be pseudonymized (first record has GUID-like ownerDisplayName or siteUrl)
+    # Microsoft 365 privacy settings can cause ownerDisplayName, ownerPrincipalName, and siteUrl to return GUIDs
+    $privacyWarning = $null
+    $firstSite = $SharePointData | Select-Object -First 1
+    if ($firstSite) {
+        $guidPattern = '^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$'
+        $isPseudonymized = (
+            ($firstSite.ownerDisplayName -and $firstSite.ownerDisplayName -match $guidPattern) -or
+            ($firstSite.ownerPrincipalName -and $firstSite.ownerPrincipalName -match $guidPattern) -or
+            ($firstSite.siteUrl -and $firstSite.siteUrl -match $guidPattern)
+        )
+        if ($isPseudonymized) {
+            Write-Verbose 'Detected pseudonymized data - M365 privacy settings may be enabled'
+            $privacyWarning = New-ADFParagraph -Text 'Note: Site names and URLs are hidden due to Microsoft 365 privacy settings. To display identifiable information, a Global Admin must go to M365 Admin Center > Settings > Org Settings > Reports and uncheck "Display de-identified names".'
+        }
+    }
+
+    # Helper function to check if a value looks like a GUID (pseudonymized data)
+    # Microsoft 365 privacy settings can cause ownerDisplayName, ownerPrincipalName, and siteUrl to return GUIDs
+    # See: https://techcommunity.microsoft.com/blog/spblog/onedrive-usage-reports-return-guids-or-pseudonymized-values-instead-of-actual-da/2718010
+    $isGuidOrPseudonymized = {
+        param($value)
+        if (-not $value) { return $true }
+        $value = $value.ToString().Trim()
+        # Check for standard GUID format (with or without hyphens)
+        if ($value -match '^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$') {
+            return $true
+        }
+        return $false
+    }
+
     # Transform to table format
     $tableData = foreach ($site in $SharePointData) {
         # Get URL first - support both webUrl (SharePoint) and siteUrl (OneDrive/SharePoint Usage Report)
-        $siteUrl = if ($site.webUrl) { $site.webUrl } elseif ($site.siteUrl) { $site.siteUrl } else { '' }
+        # Skip GUID values that indicate pseudonymized data
+        $siteUrl = if ($site.webUrl -and -not (& $isGuidOrPseudonymized $site.webUrl)) {
+            $site.webUrl
+        } elseif ($site.siteUrl -and -not (& $isGuidOrPseudonymized $site.siteUrl)) {
+            $site.siteUrl
+        } else {
+            ''
+        }
 
         # Determine site name with fallbacks
         # Support SharePoint site (displayName), Usage Reports (ownerDisplayName), or extract from URL
-        $siteName = if ($site.displayName) {
+        # Skip GUID values that indicate M365 privacy settings are concealing identifiable information
+        $siteName = if ($site.displayName -and -not (& $isGuidOrPseudonymized $site.displayName)) {
             $site.displayName
-        } elseif ($site.ownerDisplayName) {
+        } elseif ($site.ownerDisplayName -and -not (& $isGuidOrPseudonymized $site.ownerDisplayName)) {
             $site.ownerDisplayName
-        } elseif ($site.name) {
+        } elseif ($site.name -and -not (& $isGuidOrPseudonymized $site.name)) {
             $site.name
-        } elseif ($site.ownerPrincipalName) {
+        } elseif ($site.ownerPrincipalName -and -not (& $isGuidOrPseudonymized $site.ownerPrincipalName)) {
             $site.ownerPrincipalName
-        } elseif ($site.id) {
+        } elseif ($site.id -and -not (& $isGuidOrPseudonymized $site.id)) {
             $site.id
         } elseif ($siteUrl) {
             # Extract site name from URL (e.g., /sites/Marketing -> Marketing, /personal/john_contoso_com -> john_contoso_com)
@@ -137,10 +176,16 @@ function ConvertTo-ConfluenceSharePointPage {
                 'Unknown Site'
             }
         } else {
-            'Unknown Site'
+            # All identifying fields are pseudonymized - use storage-based identifier if available
+            if ($null -ne $site.storageUsedInBytes -and $site.storageUsedInBytes -gt 0) {
+                "Site ($($site.storageUsedInBytes) bytes)"
+            } else {
+                'Unknown Site'
+            }
         }
 
         # Determine site type from template or siteType property
+        # For OneDrive Usage Reports (which have storageAllocatedInBytes but no template), default to OneDrive
         $siteType = if ($site.template) {
             switch -Regex ($site.template) {
                 'GROUP#0' { 'Team Site' }
@@ -159,6 +204,9 @@ function ConvertTo-ConfluenceSharePointPage {
                 'onedrive' { 'OneDrive' }
                 default { $type }
             }
+        } elseif ($null -ne $site.storageAllocatedInBytes) {
+            # OneDrive Usage Report data has storageAllocatedInBytes but no template/siteType
+            'OneDrive'
         } else {
             'Unknown'
         }
@@ -221,8 +269,13 @@ function ConvertTo-ConfluenceSharePointPage {
     # Create table
     $table = New-ADFTable -InputObject $tableData -Property 'Site', 'URL', 'Type', 'Storage', 'Last Modified'
 
-    # Assemble document
-    $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)
+    # Assemble document - include privacy warning if pseudonymized data detected
+    $contentElements = @($heading, $timestamp, $summary)
+    if ($privacyWarning) {
+        $contentElements += $privacyWarning
+    }
+    $contentElements += $table
+    $doc = Add-ADFContent -Document $doc -Content $contentElements
 
     Write-Verbose "Created SharePoint inventory page with $totalSites site(s)"
     return ConvertTo-ADF -InputObject $doc
