@@ -5,7 +5,7 @@ function ConvertTo-ConfluenceTeamsPage {
     .DESCRIPTION
         Converts CIPP Teams data objects into Atlassian Document Format (ADF) content
         suitable for creating/updating Confluence pages. Displays Teams inventory with
-        team names, visibility, member counts, owner counts, and descriptions.
+        team names, visibility, member counts, and descriptions.
 
         The function:
         - Creates a summary section with total teams count
@@ -16,11 +16,10 @@ function ConvertTo-ConfluenceTeamsPage {
         New-ConfluencePage -Body parameter.
     .PARAMETER TeamsData
         Array of CIPP Teams data objects from the Teams Report API.
-        Expected properties: displayName, visibility, memberCount (or members),
-        ownerCount (or owners), description.
+        Expected properties: displayName, visibility, memberCount (or members), description.
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
-        Table columns: Team, Visibility, Members, Owners, Description
+        Table columns: Team, Visibility, Members, Description
     .EXAMPLE
         $adf = ConvertTo-ConfluenceTeamsPage -TeamsData $cippTeamsReport
 
@@ -116,15 +115,6 @@ function ConvertTo-ConfluenceTeamsPage {
             0
         }
 
-        # Determine owner count with fallback to owners array
-        $ownerCount = if ($null -ne $team.ownerCount) {
-            $team.ownerCount
-        } elseif ($team.owners) {
-            $team.owners.Count
-        } else {
-            0
-        }
-
         # Truncate description if too long (100 char limit)
         $description = if ($team.description) {
             if ($team.description.Length -gt 100) {
@@ -140,13 +130,12 @@ function ConvertTo-ConfluenceTeamsPage {
             'Team'        = $teamName
             'Visibility'  = $visibility
             'Members'     = $memberCount
-            'Owners'      = $ownerCount
             'Description' = $description
         }
     }
 
     # Create table
-    $table = New-ADFTable -InputObject $tableData -Property 'Team', 'Visibility', 'Members', 'Owners', 'Description'
+    $table = New-ADFTable -InputObject $tableData -Property 'Team', 'Visibility', 'Members', 'Description'
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)

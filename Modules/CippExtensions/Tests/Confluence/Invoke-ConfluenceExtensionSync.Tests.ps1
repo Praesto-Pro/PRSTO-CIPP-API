@@ -15,6 +15,7 @@ function Sync-ConfluenceLicenseReport { param($SpaceKey, $Licenses, $Users) }
 function Sync-ConfluenceMFAReport { param($SpaceKey, $Users) }
 function Sync-ConfluenceTeamsInventory { param($SpaceKey, $Teams) }
 function Sync-ConfluenceSharePointInventory { param($SpaceKey, $Sites) }
+function Write-LogMessage { param($API, $tenant, $message, $Sev) }
 
 Describe 'Invoke-ConfluenceExtensionSync' {
     BeforeAll {
@@ -75,10 +76,11 @@ Describe 'Invoke-ConfluenceExtensionSync' {
         Mock Get-ConfluenceMapping {
             return @(
                 [PSCustomObject]@{
-                    RowKey    = 'contoso.onmicrosoft.com'
-                    TenantId  = 'contoso.onmicrosoft.com'
-                    SpaceKey  = 'CONTOSO'
-                    SpaceName = 'Contoso Corp'
+                    RowKey        = 'contoso.onmicrosoft.com'
+                    TenantDomain  = 'contoso.onmicrosoft.com'
+                    TenantId      = 'tenant-guid-123'
+                    Tenant        = 'Contoso Corp'
+                    IntegrationId = 'CONTOSO'
                 }
             )
         }
@@ -90,6 +92,9 @@ Describe 'Invoke-ConfluenceExtensionSync' {
         Mock Sync-ConfluenceMFAReport { }
         Mock Sync-ConfluenceTeamsInventory { }
         Mock Sync-ConfluenceSharePointInventory { }
+
+        # Mock CIPP framework logging
+        Mock Write-LogMessage { }
     }
 
     Context 'Result Object Structure' {
@@ -568,6 +573,134 @@ Describe 'Invoke-ConfluenceExtensionSync' {
 
             $logsJoined = $result.Logs -join ''
             ($logsJoined | Select-String -Pattern 'skipped.*disabled' -AllMatches).Matches.Count | Should BeGreaterThan 2
+        }
+    }
+
+    Context 'Teams Sync with Member Count Enrichment' {
+        BeforeEach {
+            # Mock cache data with Teams (Unified groups with Team resource provisioning)
+            Mock Get-ExtensionCacheData {
+                return [PSCustomObject]@{
+                    Users         = @()
+                    Devices       = @()
+                    Licenses      = @()
+                    Groups        = @(
+                        [PSCustomObject]@{
+                            id                          = 'team-1'
+                            displayName                 = 'Engineering Team'
+                            description                 = 'Our engineering team'
+                            visibility                  = 'private'
+                            groupTypes                  = @('Unified')
+                            resourceProvisioningOptions = @('Team')
+                            mail                        = 'engineering@contoso.com'
+                        }
+                        [PSCustomObject]@{
+                            id                          = 'team-2'
+                            displayName                 = 'Sales Team'
+                            description                 = 'Our sales team'
+                            visibility                  = 'public'
+                            groupTypes                  = @('Unified')
+                            resourceProvisioningOptions = @('Team')
+                            mail                        = 'sales@contoso.com'
+                        }
+                        [PSCustomObject]@{
+                            id                          = 'group-3'
+                            displayName                 = 'Regular Group'
+                            description                 = 'Not a Team'
+                            groupTypes                  = @('Unified')
+                            resourceProvisioningOptions = @()
+                        }
+                    )
+                    # Group members stored separately by group ID
+                    'Groups_team-1' = @(
+                        [PSCustomObject]@{ id = 'user-1'; displayName = 'Alice' }
+                        [PSCustomObject]@{ id = 'user-2'; displayName = 'Bob' }
+                        [PSCustomObject]@{ id = 'user-3'; displayName = 'Charlie' }
+                    )
+                    'Groups_team-2' = @(
+                        [PSCustomObject]@{ id = 'user-4'; displayName = 'Diana' }
+                        [PSCustomObject]@{ id = 'user-5'; displayName = 'Eve' }
+                    )
+                    OneDriveUsage = @()
+                }
+            }
+        }
+
+        It 'Enriches Teams data with member counts from cached group members' {
+            $capturedTeams = $null
+            Mock Sync-ConfluenceTeamsInventory {
+                param($SpaceKey, $TeamsData)
+                $script:capturedTeams = $TeamsData
+            }
+
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncTeams = $true } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            # Verify teams were enriched with member counts
+            $script:capturedTeams | Should Not BeNullOrEmpty
+            $script:capturedTeams.Count | Should Be 2  # Only Teams, not the regular group
+
+            $engTeam = $script:capturedTeams | Where-Object { $_.displayName -eq 'Engineering Team' }
+            $engTeam.memberCount | Should Be 3
+
+            $salesTeam = $script:capturedTeams | Where-Object { $_.displayName -eq 'Sales Team' }
+            $salesTeam.memberCount | Should Be 2
+        }
+
+        It 'Filters out non-Team groups' {
+            $capturedTeams = $null
+            Mock Sync-ConfluenceTeamsInventory {
+                param($SpaceKey, $TeamsData)
+                $script:capturedTeams = $TeamsData
+            }
+
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncTeams = $true } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            # Regular Group should not be included
+            $regularGroup = $script:capturedTeams | Where-Object { $_.displayName -eq 'Regular Group' }
+            $regularGroup | Should BeNullOrEmpty
+        }
+
+        It 'Logs correct Teams count in sync message' {
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncTeams = $true } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            ($result.Logs -join '') | Should Match 'Teams sync complete: 2 teams'
+        }
+
+        It 'Shows 0 members when no cached member data exists' {
+            Mock Get-ExtensionCacheData {
+                return [PSCustomObject]@{
+                    Users         = @()
+                    Devices       = @()
+                    Licenses      = @()
+                    Groups        = @(
+                        [PSCustomObject]@{
+                            id                          = 'team-orphan'
+                            displayName                 = 'Orphan Team'
+                            description                 = 'Team with no cached members'
+                            visibility                  = 'private'
+                            groupTypes                  = @('Unified')
+                            resourceProvisioningOptions = @('Team')
+                        }
+                    )
+                    # No Groups_team-orphan key exists
+                    OneDriveUsage = @()
+                }
+            }
+
+            $capturedTeams = $null
+            Mock Sync-ConfluenceTeamsInventory {
+                param($SpaceKey, $TeamsData)
+                $script:capturedTeams = $TeamsData
+            }
+
+            $config = @{ Confluence = @{ BaseURL = 'https://test.atlassian.net'; SyncTeams = $true } }
+            $result = Invoke-ConfluenceExtensionSync -Configuration $config -TenantFilter 'contoso.onmicrosoft.com'
+
+            $orphanTeam = $script:capturedTeams | Where-Object { $_.displayName -eq 'Orphan Team' }
+            $orphanTeam.memberCount | Should Be 0
         }
     }
 }

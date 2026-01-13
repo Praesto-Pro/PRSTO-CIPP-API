@@ -80,6 +80,22 @@ function ConvertTo-ConfluenceLicensePage {
 
     Write-Verbose "Transforming $($Licenses.Count) license type(s) to ADF content"
 
+    # Load conversion table once for license name normalization
+    $ConvertTable = $null
+    try {
+        $ModuleBase = Get-Module -Name CIPPCore | Select-Object -ExpandProperty ModuleBase
+        if ($ModuleBase) {
+            $csvPath = Join-Path $ModuleBase 'lib\data\ConversionTable.csv'
+            if (Test-Path $csvPath) {
+                $ConvertTable = Import-Csv $csvPath
+                Write-Verbose "Loaded license conversion table with $($ConvertTable.Count) entries"
+            }
+        }
+    }
+    catch {
+        Write-Verbose "Could not load conversion table: $_"
+    }
+
     # Create ADF document
     $doc = New-ADFDocument
 
@@ -102,8 +118,24 @@ function ConvertTo-ConfluenceLicensePage {
         # Calculate available (min 0 for over-allocation)
         $available = [Math]::Max(0, $total - $used)
 
+        # Normalize license name using conversion table
+        $licenseName = 'Unknown'
+        if ($license.skuPartNumber) {
+            $licenseName = $license.skuPartNumber
+            # Try to get friendly name from conversion table
+            if ($ConvertTable) {
+                $friendlyName = ($ConvertTable | Where-Object { $_.String_Id -eq $license.skuPartNumber } | Select-Object -First 1).'Product_Display_Name'
+                if (-not $friendlyName -and $license.skuId) {
+                    $friendlyName = ($ConvertTable | Where-Object { $_.GUID -eq $license.skuId } | Select-Object -First 1).'Product_Display_Name'
+                }
+                if ($friendlyName) {
+                    $licenseName = $friendlyName
+                }
+            }
+        }
+
         [PSCustomObject]@{
-            'License Name' = if ($license.skuPartNumber) { $license.skuPartNumber } else { 'Unknown' }
+            'License Name' = $licenseName
             'Total'        = $total
             'Used'         = $used
             'Available'    = $available
@@ -120,50 +152,69 @@ function ConvertTo-ConfluenceLicensePage {
     if ($Users -and $Users.Count -gt 0) {
         Write-Verbose "Processing $($Users.Count) user(s) for license assignments"
 
-        # Build license lookup for name resolution
+        # Build license lookup for name resolution (using normalized names)
         $licenseLookup = @{}
         foreach ($lic in $Licenses) {
             if ($lic.skuId) {
-                $licenseLookup[$lic.skuId] = if ($lic.skuPartNumber) { $lic.skuPartNumber } else { $lic.skuId }
+                # Use normalized name if available
+                $lookupName = if ($lic.skuPartNumber) { $lic.skuPartNumber } else { $lic.skuId }
+                if ($ConvertTable) {
+                    $friendlyName = ($ConvertTable | Where-Object { $_.String_Id -eq $lic.skuPartNumber } | Select-Object -First 1).'Product_Display_Name'
+                    if (-not $friendlyName) {
+                        $friendlyName = ($ConvertTable | Where-Object { $_.GUID -eq $lic.skuId } | Select-Object -First 1).'Product_Display_Name'
+                    }
+                    if ($friendlyName) {
+                        $lookupName = $friendlyName
+                    }
+                }
+                $licenseLookup[$lic.skuId] = $lookupName
             }
         }
 
-        # Build assignments data using pipeline for O(n) performance
+        # Build assignments data - one row per user with all licenses combined
         $assignmentsData = @($Users | Sort-Object -Property displayName | ForEach-Object {
             $user = $_
             if ($user.assignedLicenses -and $user.assignedLicenses.Count -gt 0) {
+                # Collect all license names for this user
+                $userLicenses = @()
                 foreach ($assigned in $user.assignedLicenses) {
                     $skuId = $assigned.skuId
                     $licenseName = if ($skuId -and $licenseLookup.ContainsKey($skuId)) {
                         $licenseLookup[$skuId]
+                    } elseif ($skuId -and $ConvertTable) {
+                        # Try to resolve unknown SKU from conversion table
+                        $friendlyName = ($ConvertTable | Where-Object { $_.GUID -eq $skuId } | Select-Object -First 1).'Product_Display_Name'
+                        if ($friendlyName) { $friendlyName } else { $skuId.Substring(0, [Math]::Min(8, $skuId.Length)) + '...' }
                     } elseif ($skuId) {
                         $skuId.Substring(0, [Math]::Min(8, $skuId.Length)) + '...'
                     } else {
                         'Unknown'
                     }
+                    $userLicenses += $licenseName
+                }
 
-                    # Determine user display with fallbacks
-                    $userDisplay = if ($user.displayName) {
-                        $user.displayName
-                    } elseif ($user.userPrincipalName) {
-                        $user.userPrincipalName
-                    } else {
-                        'Unknown User'
-                    }
+                # Determine user display with fallbacks
+                $userDisplay = if ($user.displayName) {
+                    $user.displayName
+                } elseif ($user.userPrincipalName) {
+                    $user.userPrincipalName
+                } else {
+                    'Unknown User'
+                }
 
-                    [PSCustomObject]@{
-                        'User'    = $userDisplay
-                        'License' = $licenseName
-                    }
+                # Output single row with all licenses joined
+                [PSCustomObject]@{
+                    'User'     = $userDisplay
+                    'Licenses' = ($userLicenses | Sort-Object) -join ', '
                 }
             }
         })
 
         if ($assignmentsData.Count -gt 0) {
             $assignmentsHeading = New-ADFHeading -Level 3 -Text 'License Assignments'
-            $assignmentsTable = New-ADFTable -InputObject $assignmentsData -Property 'User', 'License'
+            $assignmentsTable = New-ADFTable -InputObject $assignmentsData -Property 'User', 'Licenses'
             $contentItems += @($assignmentsHeading, $assignmentsTable)
-            Write-Verbose "Created assignments table with $($assignmentsData.Count) assignment(s)"
+            Write-Verbose "Created assignments table with $($assignmentsData.Count) user(s)"
         }
     }
 

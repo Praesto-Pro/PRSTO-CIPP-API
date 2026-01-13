@@ -297,7 +297,32 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing Teams inventory ($teamsCount teams)"
 
                 if ($teamsCount -gt 0) {
-                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -TeamsData $teamsArray
+                    # Enrich teams with member/owner counts from cached group members
+                    # Group members are stored as Groups_{groupId} in the cache
+                    $enrichedTeams = foreach ($team in $teamsArray) {
+                        $groupId = $team.id
+                        $memberKey = "Groups_$groupId"
+                        $membersRaw = $ExtensionCache.$memberKey
+                        $members = if ($membersRaw) { @($membersRaw) } else { @() }
+
+                        # Count members from cached group members
+                        $memberCount = $members.Count
+
+                        # Create enriched team object with member count
+                        [PSCustomObject]@{
+                            id                          = $team.id
+                            displayName                 = $team.displayName
+                            description                 = $team.description
+                            visibility                  = $team.visibility
+                            memberCount                 = $memberCount
+                            groupTypes                  = $team.groupTypes
+                            resourceProvisioningOptions = $team.resourceProvisioningOptions
+                            mail                        = $team.mail
+                            createdDateTime             = $team.createdDateTime
+                        }
+                    }
+
+                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -TeamsData $enrichedTeams
                     $CompanyResult.Logs.Add("Teams sync complete: $teamsCount teams")
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync complete: $teamsCount teams synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }

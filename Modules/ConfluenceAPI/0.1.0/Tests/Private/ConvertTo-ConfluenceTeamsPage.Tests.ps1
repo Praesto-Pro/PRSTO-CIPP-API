@@ -218,44 +218,6 @@ Describe 'ConvertTo-ConfluenceTeamsPage' {
         }
     }
 
-    Context 'Owner Count Mapping' {
-        It 'Maps ownerCount property correctly' {
-            $team = [PSCustomObject]@{
-                displayName = 'Test Team'
-                ownerCount = 5
-            }
-            $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
-            $result | Should Match '5'
-        }
-
-        It 'Falls back to owners array count when ownerCount is not present' {
-            $team = [PSCustomObject]@{
-                displayName = 'Test Team'
-                owners = @('owner1', 'owner2')
-            }
-            $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
-            $result | Should Match '2'
-        }
-
-        It 'Shows 0 when neither ownerCount nor owners exists' {
-            $team = [PSCustomObject]@{
-                displayName = 'Test Team'
-            }
-            $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
-            # Should complete without error
-            $result | Should Not Be $null
-        }
-
-        It 'Handles ownerCount of zero' {
-            $team = [PSCustomObject]@{
-                displayName = 'Test Team'
-                ownerCount = 0
-            }
-            $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
-            $result | Should Not Be $null
-        }
-    }
-
     Context 'Description Mapping' {
         It 'Maps description correctly' {
             $team = [PSCustomObject]@{
@@ -377,12 +339,6 @@ Describe 'ConvertTo-ConfluenceTeamsPage' {
             $result | Should Match 'Members'
         }
 
-        It 'Creates table with Owners column' {
-            $team = [PSCustomObject]@{ displayName = 'Test Team'; ownerCount = 2 }
-            $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
-            $result | Should Match 'Owners'
-        }
-
         It 'Creates table with Description column' {
             $team = [PSCustomObject]@{ displayName = 'Test Team'; description = 'Test desc' }
             $result = ConvertTo-ConfluenceTeamsPage -TeamsData @($team)
@@ -422,13 +378,11 @@ Describe 'ConvertTo-ConfluenceTeamsPage' {
                     displayName = 'Sales Team'
                     visibility = 'private'
                     memberCount = 15
-                    ownerCount = 2
                 }
                 [PSCustomObject]@{
                     displayName = 'Marketing Team'
                     visibility = 'public'
                     memberCount = 8
-                    ownerCount = 1
                 }
             )
             $result = ConvertTo-ConfluenceTeamsPage -TeamsData $teams
@@ -443,7 +397,6 @@ Describe 'ConvertTo-ConfluenceTeamsPage' {
                     displayName = 'Complete Team'
                     visibility = 'private'
                     memberCount = 10
-                    ownerCount = 2
                     description = 'Full details'
                 }
                 [PSCustomObject]@{

@@ -317,7 +317,7 @@ Describe 'ConvertTo-ConfluenceLicensePage' {
             $result | Should Match 'Jane Doe'
         }
 
-        It 'Creates multiple rows for user with multiple licenses' {
+        It 'Shows all licenses in single row for user with multiple licenses' {
             $licenses = @(
                 [PSCustomObject]@{
                     skuId = 'sku-a'
@@ -344,9 +344,9 @@ Describe 'ConvertTo-ConfluenceLicensePage' {
 
             $result | Should Match 'LICENSE_A'
             $result | Should Match 'LICENSE_B'
-            # User should appear for both licenses
+            # User should appear only once (licenses combined in single row)
             $matches = [regex]::Matches($result, 'Multi License User')
-            $matches.Count | Should Be 2
+            $matches.Count | Should Be 1
         }
 
         It 'Sorts assignments by user displayName' {
@@ -526,7 +526,7 @@ Describe 'ConvertTo-ConfluenceLicensePage' {
 
             $verboseOutput = ConvertTo-ConfluenceLicensePage -Licenses @($license) -Users @($user) -Verbose 4>&1
 
-            ($verboseOutput -join ' ') | Should Match 'Created assignments table with 1 assignment'
+            ($verboseOutput -join ' ') | Should Match 'Created assignments table with 1 user'
         }
     }
 
