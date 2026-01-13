@@ -121,7 +121,7 @@ function Connect-ConfluenceAPI {
             Write-Verbose 'No API key returned from Get-ExtensionAPIKey'
             return [PSCustomObject]@{
                 Success = $false
-                Error   = 'Confluence API key not configured. Set via CIPP Settings > Extensions > Confluence.'
+                Error   = 'Confluence API key not configured. For Service Accounts, use the API key from your Atlassian service account. For regular users, generate a token at https://id.atlassian.com/manage/api-tokens'
             }
         }
 
@@ -140,7 +140,7 @@ function Connect-ConfluenceAPI {
             Write-Verbose 'No BaseURL found in configuration'
             return [PSCustomObject]@{
                 Success = $false
-                Error   = 'Confluence BaseURL not configured. Set via CIPP Settings > Extensions > Confluence.'
+                Error   = 'Confluence BaseURL not configured. For Service Accounts, use: https://api.atlassian.com/ex/confluence/{cloudId} (get CloudId from https://yourdomain.atlassian.net/_edge/tenant_info). For regular API tokens, use: https://yourdomain.atlassian.net'
             }
         }
 
@@ -159,7 +159,7 @@ function Connect-ConfluenceAPI {
             Write-Verbose 'No UserEmail found in configuration'
             return [PSCustomObject]@{
                 Success = $false
-                Error   = 'Confluence UserEmail not configured. Set via CIPP Settings > Extensions > Confluence.'
+                Error   = 'Confluence UserEmail not configured. For Service Accounts, use the service account email address provided by Atlassian. For regular API tokens, use your Atlassian account email.'
             }
         }
 

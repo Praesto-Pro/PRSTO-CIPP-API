@@ -122,10 +122,11 @@ function Test-ConfluenceConnection {
         }
 
         # Map status codes to user-friendly messages (per AC6 spec)
+        # Include service account guidance since this is a common configuration issue
         switch ($statusCode) {
-            401 { $errorMessage = "Authentication failed. Verify your API key is correct." }
-            403 { $errorMessage = "Access forbidden. Check API key permissions." }
-            404 { $errorMessage = "Confluence instance not found. Verify your base URL." }
+            401 { $errorMessage = "Authentication failed. Verify your API key is correct. If using a Service Account, the BaseURL must be in the format: https://api.atlassian.com/ex/confluence/{cloudId} (get your CloudId from https://yourdomain.atlassian.net/_edge/tenant_info)" }
+            403 { $errorMessage = "Access forbidden. Check API key permissions. Required scopes: read:page:confluence, write:page:confluence, read:space:confluence, write:space:confluence" }
+            404 { $errorMessage = "Confluence instance not found. Verify your base URL. For Service Accounts use: https://api.atlassian.com/ex/confluence/{cloudId}" }
             { $_ -ge 500 -and $_ -lt 600 } {
                 $errorMessage = "Confluence server error. Try again later."
             }
