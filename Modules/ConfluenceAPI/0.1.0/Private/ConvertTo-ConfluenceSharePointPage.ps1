@@ -74,6 +74,14 @@ function ConvertTo-ConfluenceSharePointPage {
 
     Write-Verbose "Transforming $($SharePointData.Count) SharePoint site record(s) to ADF content"
 
+    # Debug: Log first object structure to diagnose data issues
+    $firstObj = $SharePointData | Select-Object -First 1
+    if ($firstObj) {
+        $propNames = ($firstObj.PSObject.Properties.Name) -join ', '
+        Write-Verbose "First object property names: $propNames"
+        Write-Verbose "ownerDisplayName='$($firstObj.ownerDisplayName)', siteUrl='$($firstObj.siteUrl)', storageUsedInBytes='$($firstObj.storageUsedInBytes)'"
+    }
+
     # Create ADF document
     $doc = New-ADFDocument
 

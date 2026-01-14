@@ -349,6 +349,14 @@ function Invoke-ConfluenceExtensionSync {
                 $oneDriveData = @($ExtensionCache.OneDriveUsage)
                 Write-Verbose "Syncing OneDrive inventory ($($oneDriveData.Count) sites)"
 
+                # Debug: Log sample data to diagnose property issues
+                $sampleSite = $oneDriveData | Select-Object -First 1
+                if ($sampleSite) {
+                    $props = $sampleSite.PSObject.Properties.Name -join ', '
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample properties: $props" -Sev 'Debug'
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample values: ownerDisplayName='$($sampleSite.ownerDisplayName)', siteUrl='$($sampleSite.siteUrl)', storageUsedInBytes='$($sampleSite.storageUsedInBytes)'" -Sev 'Debug'
+                }
+
                 if ($oneDriveData.Count -gt 0) {
                     $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $oneDriveData
                     $CompanyResult.Logs.Add("OneDrive sync complete: $($oneDriveData.Count) sites")
