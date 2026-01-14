@@ -172,10 +172,17 @@ function Invoke-ConfluenceRequest {
 
                 # Try to read API response body for detailed error info
                 $responseBody = $null
-                if ($_.Exception.Response) {
+
+                # Method 1: PowerShell's ErrorDetails (most reliable in PS7)
+                if ($_.ErrorDetails.Message) {
+                    $responseBody = $_.ErrorDetails.Message
+                }
+
+                # Method 2: Try reading from Response stream (PS5.1 compatibility)
+                if (-not $responseBody -and $_.Exception.Response) {
                     try {
                         $stream = $_.Exception.Response.GetResponseStream()
-                        if ($stream) {
+                        if ($stream -and $stream.CanRead) {
                             $reader = [System.IO.StreamReader]::new($stream)
                             $responseBody = $reader.ReadToEnd()
                             $reader.Close()
@@ -185,6 +192,11 @@ function Invoke-ConfluenceRequest {
                     catch {
                         # Silently continue - response body extraction is best-effort
                     }
+                }
+
+                # Method 3: Check for nested exception message
+                if (-not $responseBody -and $_.Exception.InnerException) {
+                    $responseBody = $_.Exception.InnerException.Message
                 }
 
                 # Determine if error is retryable
@@ -213,7 +225,15 @@ function Invoke-ConfluenceRequest {
 
                 # Non-retryable error or retries exhausted - throw with actionable message
                 $baseMessage = switch ($statusCode) {
-                    400 { "Bad request. Check your request parameters. Endpoint: $Endpoint" }
+                    400 {
+                        # For 400 errors, include truncated request body to help debug
+                        $bodyPreview = if ($Body) {
+                            $preview = $Body.Substring(0, [Math]::Min(500, $Body.Length))
+                            if ($Body.Length -gt 500) { $preview += '...[truncated]' }
+                            " | Request body preview: $preview"
+                        } else { '' }
+                        "Bad request (400). Endpoint: $Endpoint$bodyPreview"
+                    }
                     401 { "Authentication failed. Verify API key." }
                     403 { "Access forbidden. Check permissions." }
                     404 { "Resource not found. Verify endpoint or ID. Endpoint: $Endpoint" }

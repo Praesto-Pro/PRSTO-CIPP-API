@@ -349,15 +349,15 @@ function Invoke-ConfluenceExtensionSync {
                 $oneDriveData = @($ExtensionCache.OneDriveUsage)
                 Write-Verbose "Syncing OneDrive inventory ($($oneDriveData.Count) sites)"
 
-                # Debug: Log sample data to diagnose property issues
+                # Debug: Log sample data to diagnose property issues (using Info severity for visibility)
                 $sampleSite = $oneDriveData | Select-Object -First 1
                 if ($sampleSite) {
                     $props = $sampleSite.PSObject.Properties.Name -join ', '
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample properties: $props" -Sev 'Debug'
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample values: ownerDisplayName='$($sampleSite.ownerDisplayName)', siteUrl='$($sampleSite.siteUrl)', storageUsedInBytes='$($sampleSite.storageUsedInBytes)'" -Sev 'Debug'
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive properties: $props" -Sev 'Info'
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive values: ownerDisplayName='$($sampleSite.ownerDisplayName)', siteUrl='$($sampleSite.siteUrl)', storageUsedInBytes='$($sampleSite.storageUsedInBytes)'" -Sev 'Info'
                     # Log the raw JSON of first object to see actual structure
                     $rawJson = $sampleSite | ConvertTo-Json -Compress -Depth 2
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive raw sample: $rawJson" -Sev 'Debug'
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive raw: $rawJson" -Sev 'Info'
                 }
 
                 if ($oneDriveData.Count -gt 0) {
