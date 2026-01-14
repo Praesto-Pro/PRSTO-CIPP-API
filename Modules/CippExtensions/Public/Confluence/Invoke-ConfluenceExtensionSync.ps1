@@ -355,6 +355,9 @@ function Invoke-ConfluenceExtensionSync {
                     $props = $sampleSite.PSObject.Properties.Name -join ', '
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample properties: $props" -Sev 'Debug'
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sample values: ownerDisplayName='$($sampleSite.ownerDisplayName)', siteUrl='$($sampleSite.siteUrl)', storageUsedInBytes='$($sampleSite.storageUsedInBytes)'" -Sev 'Debug'
+                    # Log the raw JSON of first object to see actual structure
+                    $rawJson = $sampleSite | ConvertTo-Json -Compress -Depth 2
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive raw sample: $rawJson" -Sev 'Debug'
                 }
 
                 if ($oneDriveData.Count -gt 0) {
