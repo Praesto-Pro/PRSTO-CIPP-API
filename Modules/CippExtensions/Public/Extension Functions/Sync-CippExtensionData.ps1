@@ -234,6 +234,13 @@ function Sync-CippExtensionData {
                 $requestId = $_.id
                 $status = $_.status
 
+                # Debug: Log raw response structure for SharePointSites
+                if ($requestId -eq 'SharePointSites') {
+                    $bodyKeys = if ($_.body) { ($_.body | Get-Member -MemberType NoteProperty).Name -join ', ' } else { 'null' }
+                    $valueCount = if ($_.body.value) { ($_.body.value | Measure-Object).Count } else { 'null' }
+                    Write-LogMessage -message "SharePointSites response - Status: $status, Body keys: [$bodyKeys], Value count: $valueCount" -Sev 'Debug' -tenant $TenantFilter -API 'ExtensionSync'
+                }
+
                 # Skip failed requests (4xx/5xx status codes)
                 if ($status -ge 400) {
                     $errorMessage = if ($_.body.error) { $_.body.error.message } else { "HTTP $status" }
