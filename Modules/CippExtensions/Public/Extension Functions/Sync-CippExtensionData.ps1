@@ -238,7 +238,7 @@ function Sync-CippExtensionData {
                 if ($requestId -eq 'SharePointSites') {
                     $bodyKeys = if ($_.body) { ($_.body | Get-Member -MemberType NoteProperty).Name -join ', ' } else { 'null' }
                     $valueCount = if ($_.body.value) { ($_.body.value | Measure-Object).Count } else { 'null' }
-                    Write-LogMessage -message "SharePointSites response - Status: $status, Body keys: [$bodyKeys], Value count: $valueCount" -Sev 'Debug' -tenant $TenantFilter -API 'ExtensionSync'
+                    Write-LogMessage -message "SharePointSites response - Status: $status, Body keys: [$bodyKeys], Value count: $valueCount" -Sev 'Info' -tenant $TenantFilter -API 'ExtensionSync'
                 }
 
                 # Skip failed requests (4xx/5xx status codes)
