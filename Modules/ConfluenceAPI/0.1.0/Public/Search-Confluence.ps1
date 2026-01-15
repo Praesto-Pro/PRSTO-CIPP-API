@@ -87,10 +87,13 @@ function Search-Confluence {
     }
 
     try {
+        Write-Verbose "Calling Confluence search API: $endpoint"
         $response = Invoke-ConfluenceRequest -Endpoint $endpoint -Method GET
+        Write-Verbose "Search API response type: $($response.GetType().Name)"
     }
     catch {
         $errorMessage = $_.Exception.Message
+        Write-Verbose "Search API threw exception: $errorMessage"
 
         # 400 - Invalid CQL syntax
         if ($errorMessage -match '400|Bad request|invalid|CQL') {

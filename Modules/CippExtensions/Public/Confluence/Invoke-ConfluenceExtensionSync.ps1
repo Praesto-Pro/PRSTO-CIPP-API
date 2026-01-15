@@ -128,7 +128,7 @@ function Invoke-ConfluenceExtensionSync {
         }
 
         Write-Verbose "Resolved tenant mapping: SpaceKey = '$SpaceKey'"
-        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Resolved tenant to Confluence space '$SpaceKey'" -Sev 'Debug'
+        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Resolved tenant to Confluence space key '$SpaceKey'" -Sev 'Info'
         $CompanyResult.Logs.Add("Tenant mapped to Confluence space '$SpaceKey'")
 
         # Phase 4: Load cached M365 data

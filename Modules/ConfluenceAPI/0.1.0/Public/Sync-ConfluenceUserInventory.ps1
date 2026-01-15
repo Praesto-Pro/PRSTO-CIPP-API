@@ -105,12 +105,9 @@ function Sync-ConfluenceUserInventory {
     # Generate content hash for change detection (Story 10.4)
     $newHash = Get-ConfluenceContentHash -Content $adfContent
 
-    # Search for existing page using CQL (escape single quotes to prevent CQL injection)
-    $escapedSpaceKey = $SpaceKey -replace "'", "''"
-    $escapedTitle = $PageTitle -replace "'", "''"
-    $cql = "space = '$escapedSpaceKey' AND title = '$escapedTitle' AND type = page"
-    Write-Verbose "Searching for existing page with CQL: $cql"
-    $existingPage = Search-Confluence -CQL $cql | Select-Object -First 1
+    # Find existing page using helper (handles search indexing delays)
+    Write-Verbose "Searching for existing page '$PageTitle' in space '$SpaceKey'"
+    $existingPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $PageTitle
 
     if ($existingPage) {
         # Check cache for change detection (Story 10.4)
@@ -147,18 +144,41 @@ function Sync-ConfluenceUserInventory {
     else {
         Write-Verbose "No existing page found - creating new page"
         if ($PSCmdlet.ShouldProcess($PageTitle, "Create Confluence page")) {
-            $result = New-ConfluencePage -SpaceKey $SpaceKey -Title $PageTitle -Body $adfContent
+            try {
+                $result = New-ConfluencePage -SpaceKey $SpaceKey -Title $PageTitle -Body $adfContent
 
-            # Update cache after successful create (Story 10.4)
-            Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
+                # Update cache after successful create (Story 10.4)
+                Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
 
-            Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
-            return [PSCustomObject]@{
-                Id       = $result.Id
-                Title    = $result.Title
-                SpaceKey = $SpaceKey
-                Version  = $result.Version.Number
-                Action   = 'Created'
+                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
+                return [PSCustomObject]@{
+                    Id       = $result.Id
+                    Title    = $result.Title
+                    SpaceKey = $SpaceKey
+                    Version  = $result.Version.Number
+                    Action   = 'Created'
+                }
+            }
+            catch {
+                # Handle "page already exists" error - search index was stale
+                if ($_.Exception.Message -match 'already exists|same TITLE') {
+                    Write-Verbose "Page creation failed because it already exists - retrying find and update"
+                    $existingPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $PageTitle
+                    if ($existingPage) {
+                        $result = Set-ConfluencePage -PageId $existingPage.Id -Body $adfContent
+                        Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
+                        Write-Verbose "Successfully updated existing page '$PageTitle' (ID: $($result.Id))"
+                        return [PSCustomObject]@{
+                            Id       = $result.Id
+                            Title    = $result.Title
+                            SpaceKey = $SpaceKey
+                            Version  = $result.Version.Number
+                            Action   = 'Updated'
+                        }
+                    }
+                }
+                # Re-throw if not handled
+                throw
             }
         }
     }
