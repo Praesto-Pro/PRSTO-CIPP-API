@@ -225,7 +225,7 @@ function Sync-CippExtensionData {
         if ($TenantRequests) {
             Write-Information "Requesting tenant information for $TenantFilter $SyncType"
             try {
-                $TenantResults = New-GraphBulkRequest -Requests @($TenantRequests) -tenantid $TenantFilter
+                $TenantResults = New-GraphBulkRequest -Requests @($TenantRequests) -tenantid $TenantFilter -asapp $true
             } catch {
                 throw "Failed to fetch bulk company data: $_"
             }
@@ -237,7 +237,7 @@ function Sync-CippExtensionData {
                 # Skip failed requests (4xx/5xx status codes)
                 if ($status -ge 400) {
                     $errorMessage = if ($_.body.error) { $_.body.error.message } else { "HTTP $status" }
-                    Write-Information "Bulk request '$requestId' failed: $errorMessage"
+                    Write-LogMessage -message "Extension sync bulk request '$requestId' failed for $TenantFilter : $errorMessage" -Sev 'Warning' -tenant $TenantFilter -API 'ExtensionSync'
                     return
                 }
 
@@ -246,6 +246,12 @@ function Sync-CippExtensionData {
                     # base64 decode
                     $Data = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Data)) | ConvertFrom-Json
                     $Data = $Data.Value
+                }
+
+                # Skip if no data returned
+                if ($null -eq $Data -or ($Data -is [array] -and $Data.Count -eq 0)) {
+                    Write-LogMessage -message "Extension sync '$requestId' returned no data for $TenantFilter" -Sev 'Info' -tenant $TenantFilter -API 'ExtensionSync'
+                    return
                 }
 
                 # Filter out excluded licenses to respect the ExcludedLicenses table
