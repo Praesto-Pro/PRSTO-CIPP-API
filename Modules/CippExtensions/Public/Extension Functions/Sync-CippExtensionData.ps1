@@ -230,7 +230,17 @@ function Sync-CippExtensionData {
                 throw "Failed to fetch bulk company data: $_"
             }
 
-            $TenantResults | Select-Object id, body | ForEach-Object {
+            $TenantResults | ForEach-Object {
+                $requestId = $_.id
+                $status = $_.status
+
+                # Skip failed requests (4xx/5xx status codes)
+                if ($status -ge 400) {
+                    $errorMessage = if ($_.body.error) { $_.body.error.message } else { "HTTP $status" }
+                    Write-Information "Bulk request '$requestId' failed: $errorMessage"
+                    return
+                }
+
                 $Data = $_.body.value ?? $_.body
                 if ($Data -match '^eyJ') {
                     # base64 decode
@@ -239,7 +249,7 @@ function Sync-CippExtensionData {
                 }
 
                 # Filter out excluded licenses to respect the ExcludedLicenses table
-                if ($_.id -eq 'Licenses') {
+                if ($requestId -eq 'Licenses') {
                     $LicenseTable = Get-CIPPTable -TableName ExcludedLicenses
                     $ExcludedSkuList = Get-CIPPAzDataTableEntity @LicenseTable
                     if ($ExcludedSkuList) {
@@ -249,7 +259,7 @@ function Sync-CippExtensionData {
 
                 $Entity = @{
                     PartitionKey = $TenantFilter
-                    RowKey       = $_.id
+                    RowKey       = $requestId
                     SyncType     = $SyncType
                     Data         = [string]($Data | ConvertTo-Json -Depth 10 -Compress)
                 }
