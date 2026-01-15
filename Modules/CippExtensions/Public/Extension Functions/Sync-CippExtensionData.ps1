@@ -71,6 +71,16 @@ function Sync-CippExtensionData {
                         url    = "reports/getOneDriveUsageAccountDetail(period='D7')?`$format=application%2fjson"
                     },
                     @{
+                        id     = 'SharePointSites'
+                        method = 'GET'
+                        url    = "sites/getAllSites?`$filter=isPersonalSite eq false&`$select=id,createdDateTime,description,name,displayName,isPersonalSite,lastModifiedDateTime,webUrl,siteCollection,sharepointIds&`$top=999"
+                    },
+                    @{
+                        id     = 'SharePointUsage'
+                        method = 'GET'
+                        url    = "reports/getSharePointSiteUsageDetail(period='D7')?`$format=application%2fjson"
+                    },
+                    @{
                         id     = 'MailboxUsage'
                         method = 'GET'
                         url    = "reports/getMailboxUsageDetail(period='D7')?`$format=application%2fjson"

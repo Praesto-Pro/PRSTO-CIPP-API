@@ -345,35 +345,68 @@ function Invoke-ConfluenceExtensionSync {
         # 5f: SharePoint/OneDrive Inventory
         if ($confluenceConfig.SyncSharePoint -ne $false) {
             try {
-                # OneDriveUsage contains personal OneDrive sites from the extension cache
+                # Combine SharePoint Sites with usage data (similar to Invoke-ListSites pattern)
+                $sharePointSites = @($ExtensionCache.SharePointSites)
+                $sharePointUsage = @($ExtensionCache.SharePointUsage)
                 $oneDriveData = @($ExtensionCache.OneDriveUsage)
-                Write-Verbose "Syncing OneDrive inventory ($($oneDriveData.Count) sites)"
 
-                # Debug: Log sample data to diagnose property issues (using Info severity for visibility)
-                $sampleSite = $oneDriveData | Select-Object -First 1
-                if ($sampleSite) {
-                    $props = $sampleSite.PSObject.Properties.Name -join ', '
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive properties: $props" -Sev 'Info'
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive values: ownerDisplayName='$($sampleSite.ownerDisplayName)', siteUrl='$($sampleSite.siteUrl)', storageUsedInBytes='$($sampleSite.storageUsedInBytes)'" -Sev 'Info'
-                    # Log the raw JSON of first object to see actual structure
-                    $rawJson = $sampleSite | ConvertTo-Json -Compress -Depth 2
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "DEBUG OneDrive raw: $rawJson" -Sev 'Info'
+                Write-Verbose "SharePoint sites: $($sharePointSites.Count), Usage: $($sharePointUsage.Count), OneDrive: $($oneDriveData.Count)"
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sites: $($sharePointSites.Count), Usage: $($sharePointUsage.Count), OneDrive: $($oneDriveData.Count)" -Sev 'Debug'
+
+                # Build combined SharePoint data (sites enriched with usage data)
+                $combinedSharePointData = @()
+                if ($sharePointSites.Count -gt 0) {
+                    $combinedSharePointData = foreach ($site in $sharePointSites) {
+                        # Match usage by siteId (sharepointIds.siteId in sites, siteId in usage)
+                        $siteId = if ($site.sharepointIds) { $site.sharepointIds.siteId } else { $site.id }
+                        $usage = $sharePointUsage | Where-Object { $_.siteId -eq $siteId }
+
+                        [PSCustomObject]@{
+                            displayName          = $site.displayName
+                            webUrl               = $site.webUrl
+                            siteType             = 'SharePoint'
+                            storageUsedInBytes   = if ($usage) { $usage.storageUsedInBytes } else { $null }
+                            lastModifiedDateTime = $site.lastModifiedDateTime
+                            ownerDisplayName     = if ($usage) { $usage.ownerDisplayName } else { $null }
+                            ownerPrincipalName   = if ($usage) { $usage.ownerPrincipalName } else { $null }
+                            template             = if ($usage) { $usage.rootWebTemplate } else { $null }
+                        }
+                    }
                 }
 
-                if ($oneDriveData.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $oneDriveData
-                    $CompanyResult.Logs.Add("OneDrive sync complete: $($oneDriveData.Count) sites")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sync complete: $($oneDriveData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
+                # Add OneDrive sites (mark as OneDrive type)
+                $oneDriveEnriched = foreach ($od in $oneDriveData) {
+                    [PSCustomObject]@{
+                        displayName             = $od.ownerDisplayName
+                        webUrl                  = $od.siteUrl
+                        siteType                = 'OneDrive'
+                        storageUsedInBytes      = $od.storageUsedInBytes
+                        storageAllocatedInBytes = $od.storageAllocatedInBytes
+                        lastModifiedDateTime    = $od.lastActivityDate
+                        ownerDisplayName        = $od.ownerDisplayName
+                        ownerPrincipalName      = $od.ownerPrincipalName
+                    }
+                }
+
+                # Combine both into one array
+                $allSitesData = @($combinedSharePointData) + @($oneDriveEnriched)
+                Write-Verbose "Combined site data: $($allSitesData.Count) total sites"
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Combined site data: $($allSitesData.Count) total sites ($($combinedSharePointData.Count) SharePoint + $($oneDriveEnriched.Count) OneDrive)" -Sev 'Debug'
+
+                if ($allSitesData.Count -gt 0) {
+                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $allSitesData
+                    $CompanyResult.Logs.Add("SharePoint/OneDrive sync complete: $($allSitesData.Count) sites")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint/OneDrive sync complete: $($allSitesData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('OneDrive sync skipped: no OneDrive data in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'OneDrive sync skipped: no data in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('SharePoint sync skipped: no SharePoint/OneDrive data in cache')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SharePoint sync skipped: no data in cache' -Sev 'Debug'
                 }
             }
             catch {
-                $CompanyResult.Errors.Add("OneDrive sync failed: $_")
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "OneDrive sync failed: $_" -Sev 'Error'
-                Write-Verbose "OneDrive sync error: $_"
+                $CompanyResult.Errors.Add("SharePoint sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sync failed: $_" -Sev 'Error'
+                Write-Verbose "SharePoint sync error: $_"
             }
         }
         else {
