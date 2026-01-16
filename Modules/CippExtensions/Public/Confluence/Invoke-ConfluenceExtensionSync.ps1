@@ -345,13 +345,45 @@ function Invoke-ConfluenceExtensionSync {
         # 5f: SharePoint/OneDrive Inventory
         if ($confluenceConfig.SyncSharePoint -ne $false) {
             try {
-                # Combine SharePoint Sites with usage data (similar to Invoke-ListSites pattern)
-                $sharePointSites = @($ExtensionCache.SharePointSites)
-                $sharePointUsage = @($ExtensionCache.SharePointUsage)
-                $oneDriveData = @($ExtensionCache.OneDriveUsage)
+                # Fetch SharePoint data directly using bulk request (same pattern as Invoke-ListSites)
+                # This bypasses the cache which has issues with the sites/getAllSites API
+                $BulkRequests = @(
+                    @{
+                        id     = 'listAllSites'
+                        method = 'GET'
+                        url    = "sites/getAllSites?`$filter=isPersonalSite eq false&`$select=id,createdDateTime,description,name,displayName,isPersonalSite,lastModifiedDateTime,webUrl,siteCollection,sharepointIds&`$top=999"
+                    }
+                    @{
+                        id     = 'sharePointUsage'
+                        method = 'GET'
+                        url    = "reports/getSharePointSiteUsageDetail(period='D7')?`$format=application/json&`$top=999"
+                    }
+                    @{
+                        id     = 'oneDriveUsage'
+                        method = 'GET'
+                        url    = "reports/getOneDriveUsageAccountDetail(period='D7')?`$format=application/json&`$top=999"
+                    }
+                )
+
+                $Result = New-GraphBulkRequest -tenantid $TenantFilter -Requests @($BulkRequests) -asapp $true
+                $sharePointSites = @(($Result | Where-Object { $_.id -eq 'listAllSites' }).body.value)
+
+                # Usage reports are base64 encoded
+                $spUsageBase64 = ($Result | Where-Object { $_.id -eq 'sharePointUsage' }).body
+                $sharePointUsage = @()
+                if ($spUsageBase64 -match '^eyJ') {
+                    $spUsageJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($spUsageBase64))
+                    $sharePointUsage = @(($spUsageJson | ConvertFrom-Json).value)
+                }
+
+                $odUsageBase64 = ($Result | Where-Object { $_.id -eq 'oneDriveUsage' }).body
+                $oneDriveData = @()
+                if ($odUsageBase64 -match '^eyJ') {
+                    $odUsageJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($odUsageBase64))
+                    $oneDriveData = @(($odUsageJson | ConvertFrom-Json).value)
+                }
 
                 Write-Verbose "SharePoint sites: $($sharePointSites.Count), Usage: $($sharePointUsage.Count), OneDrive: $($oneDriveData.Count)"
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint sites: $($sharePointSites.Count), Usage: $($sharePointUsage.Count), OneDrive: $($oneDriveData.Count)" -Sev 'Debug'
 
                 # Build combined SharePoint data (sites enriched with usage data)
                 $combinedSharePointData = @()
@@ -391,7 +423,6 @@ function Invoke-ConfluenceExtensionSync {
                 # Combine both into one array
                 $allSitesData = @($combinedSharePointData) + @($oneDriveEnriched)
                 Write-Verbose "Combined site data: $($allSitesData.Count) total sites"
-                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Combined site data: $($allSitesData.Count) total sites ($($combinedSharePointData.Count) SharePoint + $($oneDriveEnriched.Count) OneDrive)" -Sev 'Debug'
 
                 if ($allSitesData.Count -gt 0) {
                     $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $allSitesData
@@ -399,8 +430,8 @@ function Invoke-ConfluenceExtensionSync {
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint/OneDrive sync complete: $($allSitesData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('SharePoint sync skipped: no SharePoint/OneDrive data in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SharePoint sync skipped: no data in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('SharePoint sync skipped: no SharePoint/OneDrive data available')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SharePoint sync skipped: no data available' -Sev 'Info'
                 }
             }
             catch {
