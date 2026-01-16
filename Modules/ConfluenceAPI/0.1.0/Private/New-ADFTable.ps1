@@ -19,6 +19,11 @@ function New-ADFTable {
         Optional list of property names to include as columns.
         If not specified, all properties from the first object are used.
         Columns appear in the order specified.
+    .PARAMETER Layout
+        Table layout mode. Valid values: 'default', 'wide', 'full-width'.
+        - default: Standard table width
+        - wide: Extended width (default if not specified)
+        - full-width: Spans entire page width
     .OUTPUTS
         [hashtable] - ADF table node structure ready to be added to an ADF document
     .EXAMPLE
@@ -58,7 +63,11 @@ function New-ADFTable {
         [object]$InputObject,
 
         [Parameter()]
-        [string[]]$Property
+        [string[]]$Property,
+
+        [Parameter()]
+        [ValidateSet('default', 'wide', 'full-width')]
+        [string]$Layout = 'wide'
     )
 
     begin {
@@ -80,7 +89,7 @@ function New-ADFTable {
             type    = 'table'
             attrs   = @{
                 isNumberColumnEnabled = $false
-                layout                = 'wide'
+                layout                = $Layout
             }
             content = @()
         }

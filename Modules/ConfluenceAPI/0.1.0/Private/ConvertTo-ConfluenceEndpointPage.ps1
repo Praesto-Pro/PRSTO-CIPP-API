@@ -209,8 +209,8 @@ function ConvertTo-ConfluenceEndpointPage {
         }
     }
 
-    # Create table with all columns
-    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Ownership', 'Join Type', 'Model', 'Serial', 'Last Sync'
+    # Create table with all columns - use full-width layout for page width
+    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Ownership', 'Join Type', 'Model', 'Serial', 'Last Sync' -Layout 'full-width'
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)
