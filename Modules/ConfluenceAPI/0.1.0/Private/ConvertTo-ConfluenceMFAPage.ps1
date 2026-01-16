@@ -81,25 +81,31 @@ function ConvertTo-ConfluenceMFAPage {
     $utcTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')
     $timestamp = New-ADFParagraph -Text "Data as of: $utcTime UTC"
 
-    # Calculate MFA coverage summary
-    # CIPP properties: MFARegistration (bool), PerUser (state), CoveredBySD (bool), CoveredByCA (string)
-    $totalUsers = $MFAData.Count
-    $mfaEnabledCount = @($MFAData | Where-Object {
+    # Calculate MFA coverage summary (exclude disabled users - they can't log in)
+    # CIPP properties: AccountEnabled (bool), MFARegistration (bool), PerUser (state), CoveredBySD (bool), CoveredByCA (string)
+    $enabledUsers = @($MFAData | Where-Object { $_.AccountEnabled -eq $true })
+    $totalEnabledUsers = $enabledUsers.Count
+    $disabledCount = $MFAData.Count - $totalEnabledUsers
+
+    $mfaEnabledCount = @($enabledUsers | Where-Object {
         $_.MFARegistration -eq $true -or
         $_.PerUser -in @('enabled', 'enforced') -or
         $_.CoveredBySD -eq $true -or
         ($_.CoveredByCA -and $_.CoveredByCA -like 'Enforced*')
     }).Count
-    $percentage = if ($totalUsers -gt 0) {
-        [math]::Round(($mfaEnabledCount / $totalUsers) * 100, 1)
+    $percentage = if ($totalEnabledUsers -gt 0) {
+        [math]::Round(($mfaEnabledCount / $totalEnabledUsers) * 100, 1)
     } else {
         0
     }
 
-    Write-Verbose "MFA coverage: $mfaEnabledCount of $totalUsers users ($percentage%)"
+    Write-Verbose "MFA coverage: $mfaEnabledCount of $totalEnabledUsers enabled users ($percentage%), $disabledCount disabled users excluded"
 
     # Generate summary paragraph
-    $summaryText = "MFA Coverage: $mfaEnabledCount of $totalUsers users ($percentage%) protected by MFA"
+    $summaryText = "MFA Coverage: $mfaEnabledCount of $totalEnabledUsers enabled users ($percentage%) protected by MFA"
+    if ($disabledCount -gt 0) {
+        $summaryText += " ($disabledCount disabled users excluded)"
+    }
     $summary = New-ADFParagraph -Text $summaryText
 
     # Transform to table format
