@@ -117,12 +117,39 @@ function ConvertTo-ConfluenceUserPage {
         Write-Verbose "Created MFA lookup with $($mfaLookup.Count) entries"
     }
 
-    # Build license lookup hashtable
+    # Load conversion table for license name normalization (same as ConvertTo-ConfluenceLicensePage)
+    $ConvertTable = $null
+    try {
+        $ModuleBase = Get-Module -Name CIPPCore | Select-Object -ExpandProperty ModuleBase
+        if ($ModuleBase) {
+            $csvPath = Join-Path $ModuleBase 'lib\data\ConversionTable.csv'
+            if (Test-Path $csvPath) {
+                $ConvertTable = Import-Csv $csvPath
+                Write-Verbose "Loaded license conversion table with $($ConvertTable.Count) entries"
+            }
+        }
+    }
+    catch {
+        Write-Verbose "Could not load conversion table: $_"
+    }
+
+    # Build license lookup hashtable with friendly names
     $licenseLookup = @{}
     if ($Licenses) {
         foreach ($lic in $Licenses) {
             if ($lic.skuId) {
-                $licenseLookup[$lic.skuId] = $lic.skuPartNumber
+                # Use normalized name if available from conversion table
+                $lookupName = if ($lic.skuPartNumber) { $lic.skuPartNumber } else { $lic.skuId }
+                if ($ConvertTable) {
+                    $friendlyName = ($ConvertTable | Where-Object { $_.String_Id -eq $lic.skuPartNumber } | Select-Object -First 1).'Product_Display_Name'
+                    if (-not $friendlyName -and $lic.skuId) {
+                        $friendlyName = ($ConvertTable | Where-Object { $_.GUID -eq $lic.skuId } | Select-Object -First 1).'Product_Display_Name'
+                    }
+                    if ($friendlyName) {
+                        $lookupName = $friendlyName
+                    }
+                }
+                $licenseLookup[$lic.skuId] = $lookupName
             }
         }
         Write-Verbose "Created license lookup with $($licenseLookup.Count) entries"
@@ -141,7 +168,7 @@ function ConvertTo-ConfluenceUserPage {
             }
         }
 
-        # License mapping (AC4)
+        # License mapping (AC4) - with friendly name lookup
         $licenseNames = 'None'
         if ($user.assignedLicenses -and $user.assignedLicenses.Count -gt 0) {
             $names = @()
@@ -152,13 +179,24 @@ function ConvertTo-ConfluenceUserPage {
                 if ($skuId -and $licenseLookup.ContainsKey($skuId)) {
                     $names += $licenseLookup[$skuId]
                 }
+                elseif ($skuId -and $ConvertTable) {
+                    # Try to resolve unknown SKU from conversion table directly
+                    $friendlyName = ($ConvertTable | Where-Object { $_.GUID -eq $skuId } | Select-Object -First 1).'Product_Display_Name'
+                    if ($friendlyName) {
+                        $names += $friendlyName
+                    }
+                    else {
+                        # Truncate unknown SKU ID for display
+                        $names += $skuId.Substring(0, [Math]::Min(8, $skuId.Length)) + '...'
+                    }
+                }
                 elseif ($skuId) {
                     # Truncate unknown SKU ID for display
                     $names += $skuId.Substring(0, [Math]::Min(8, $skuId.Length)) + '...'
                 }
             }
             if ($names.Count -gt 0) {
-                $licenseNames = $names -join ', '
+                $licenseNames = ($names | Sort-Object) -join ', '
             }
         }
 
