@@ -274,8 +274,8 @@ function ConvertTo-ConfluenceSharePointPage {
         }
     }
 
-    # Create table
-    $table = New-ADFTable -InputObject $tableData -Property 'Site', 'URL', 'Type', 'Storage', 'Last Modified'
+    # Create table - use full-width layout for page width
+    $table = New-ADFTable -InputObject $tableData -Property 'Site', 'URL', 'Type', 'Storage', 'Last Modified' -Layout 'full-width'
 
     # Assemble document - include privacy warning if pseudonymized data detected
     $contentElements = @($heading, $timestamp, $summary)
