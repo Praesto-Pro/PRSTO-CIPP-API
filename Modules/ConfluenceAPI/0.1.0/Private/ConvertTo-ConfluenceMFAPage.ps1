@@ -15,10 +15,10 @@ function ConvertTo-ConfluenceMFAPage {
         Returns an ADF JSON string that can be used directly with
         New-ConfluencePage -Body parameter.
     .PARAMETER MFAData
-        Array of CIPP MFA report objects from the MFA Report API.
-        Expected properties: userPrincipalName, displayName, isMfaRegistered,
-        perUserMfaState, isSecurityDefaultsCovered, isConditionalAccessCovered,
-        authenticationMethods (or methodsRegistered).
+        Array of CIPP MFA report objects from Get-CIPPMFAState.
+        Expected properties: UPN, DisplayName, MFARegistration (boolean),
+        PerUser (state string), MFAMethods (array), CoveredBySD (boolean),
+        CoveredByCA (string like "Enforced - All Apps" or "Not Enforced").
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
         Table columns: User, MFA Status, MFA Methods, Per-User MFA,
@@ -82,12 +82,13 @@ function ConvertTo-ConfluenceMFAPage {
     $timestamp = New-ADFParagraph -Text "Data as of: $utcTime UTC"
 
     # Calculate MFA coverage summary
+    # CIPP properties: MFARegistration (bool), PerUser (state), CoveredBySD (bool), CoveredByCA (string)
     $totalUsers = $MFAData.Count
     $mfaEnabledCount = @($MFAData | Where-Object {
-        $_.isMfaRegistered -or
-        $_.perUserMfaState -in @('enabled', 'enforced') -or
-        $_.isSecurityDefaultsCovered -or
-        $_.isConditionalAccessCovered
+        $_.MFARegistration -eq $true -or
+        $_.PerUser -in @('enabled', 'enforced') -or
+        $_.CoveredBySD -eq $true -or
+        ($_.CoveredByCA -and $_.CoveredByCA -like 'Enforced*')
     }).Count
     $percentage = if ($totalUsers -gt 0) {
         [math]::Round(($mfaEnabledCount / $totalUsers) * 100, 1)
@@ -102,32 +103,32 @@ function ConvertTo-ConfluenceMFAPage {
     $summary = New-ADFParagraph -Text $summaryText
 
     # Transform to table format
+    # CIPP properties: UPN, DisplayName, MFARegistration, PerUser, MFAMethods, CoveredBySD, CoveredByCA
     $tableData = foreach ($user in $MFAData) {
-        # Determine display name with fallbacks
-        $displayName = if ($user.displayName) {
-            $user.displayName
-        } elseif ($user.userPrincipalName) {
-            $user.userPrincipalName
+        # Determine display name with fallbacks (CIPP uses DisplayName and UPN)
+        $displayName = if ($user.DisplayName) {
+            $user.DisplayName
+        } elseif ($user.UPN) {
+            $user.UPN
         } else {
             'Unknown User'
         }
 
         # Determine overall MFA status for display
-        $mfaStatus = if ($user.perUserMfaState -and $user.perUserMfaState.ToLower() -eq 'enforced') {
+        # CIPP: PerUser (state string), MFARegistration (bool), CoveredBySD (bool), CoveredByCA (string)
+        $mfaStatus = if ($user.PerUser -and $user.PerUser.ToLower() -eq 'enforced') {
             'Enforced'
-        } elseif (($user.perUserMfaState -and $user.perUserMfaState.ToLower() -eq 'enabled') -or $user.isMfaRegistered) {
+        } elseif (($user.PerUser -and $user.PerUser.ToLower() -eq 'enabled') -or $user.MFARegistration -eq $true) {
             'Enabled'
-        } elseif ($user.isSecurityDefaultsCovered -or $user.isConditionalAccessCovered) {
+        } elseif ($user.CoveredBySD -eq $true -or ($user.CoveredByCA -and $user.CoveredByCA -like 'Enforced*')) {
             'Protected (Policy)'
         } else {
             'Disabled'
         }
 
-        # Convert authentication methods array to readable display
-        $methods = if ($user.authenticationMethods) {
-            $user.authenticationMethods
-        } elseif ($user.methodsRegistered) {
-            $user.methodsRegistered
+        # Convert MFA methods array to readable display (CIPP uses MFAMethods)
+        $methods = if ($user.MFAMethods) {
+            $user.MFAMethods
         } else {
             @()
         }
@@ -136,8 +137,11 @@ function ConvertTo-ConfluenceMFAPage {
             $friendlyNames = @($methods | ForEach-Object {
                 $method = $_.ToString().ToLower()
                 switch ($method) {
-                    'microsoftauthenticator' { 'Authenticator App' }
                     'microsoftauthenticatorpush' { 'Authenticator App' }
+                    'microsoftauthenticatorpasswordless' { 'Authenticator Passwordless' }
+                    'microsoftauthenticator' { 'Authenticator App' }
+                    'phonevoice' { 'Phone (Voice)' }
+                    'phoneotp' { 'Phone (OTP)' }
                     'phone' { 'Phone' }
                     'mobilephone' { 'Phone' }
                     'sms' { 'SMS' }
@@ -145,6 +149,8 @@ function ConvertTo-ConfluenceMFAPage {
                     'windowshelloforbusiness' { 'Windows Hello' }
                     'softwareoath' { 'TOTP App' }
                     'email' { 'Email' }
+                    'passkeymicrosoftauthenticator' { 'Passkey (Authenticator)' }
+                    'passkey' { 'Passkey' }
                     default { $_ }
                 }
             } | Select-Object -Unique)
@@ -153,18 +159,28 @@ function ConvertTo-ConfluenceMFAPage {
             'None'
         }
 
-        # Per-User MFA state display
-        $perUserDisplay = if ($user.perUserMfaState) {
+        # Per-User MFA state display (CIPP uses PerUser)
+        $perUserDisplay = if ($user.PerUser) {
             # Capitalize first letter
-            $state = $user.perUserMfaState.ToString()
-            $state.Substring(0, 1).ToUpper() + $state.Substring(1).ToLower()
+            $state = $user.PerUser.ToString()
+            if ($state.Length -gt 0) {
+                $state.Substring(0, 1).ToUpper() + $state.Substring(1).ToLower()
+            } else {
+                'N/A'
+            }
         } else {
             'N/A'
         }
 
-        # Security Defaults and Conditional Access coverage
-        $sdCovered = if ($user.isSecurityDefaultsCovered) { 'Yes' } else { 'No' }
-        $caCovered = if ($user.isConditionalAccessCovered) { 'Yes' } else { 'No' }
+        # Security Defaults coverage (CIPP uses CoveredBySD - boolean)
+        $sdCovered = if ($user.CoveredBySD -eq $true) { 'Yes' } else { 'No' }
+
+        # Conditional Access coverage (CIPP uses CoveredByCA - string like "Enforced - All Apps")
+        $caCovered = if ($user.CoveredByCA -and $user.CoveredByCA -like 'Enforced*') {
+            'Yes'
+        } else {
+            'No'
+        }
 
         [PSCustomObject]@{
             'User'               = $displayName

@@ -261,18 +261,20 @@ function Invoke-ConfluenceExtensionSync {
         # 5d: MFA Report
         if ($confluenceConfig.SyncMFA -ne $false) {
             try {
-                # MFA data may be part of Users or separate
-                $users = @($ExtensionCache.Users)
-                Write-Verbose "Syncing MFA report ($($users.Count) users)"
+                # Fetch MFA data directly using Get-CIPPMFAState (same as Invoke-ListMFAUsers)
+                # This returns proper MFA properties: UPN, DisplayName, MFARegistration, PerUser, MFAMethods, CoveredBySD, CoveredByCA
+                Write-Verbose "Fetching MFA data for tenant $TenantFilter"
+                $mfaData = @(Get-CIPPMFAState -TenantFilter $TenantFilter)
+                Write-Verbose "Syncing MFA report ($($mfaData.Count) users)"
 
-                if ($users.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -MFAData $users
-                    $CompanyResult.Logs.Add("MFA sync complete: $($users.Count) users")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($users.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
+                if ($mfaData.Count -gt 0) {
+                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -MFAData $mfaData
+                    $CompanyResult.Logs.Add("MFA sync complete: $($mfaData.Count) users")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($mfaData.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('MFA sync skipped: no user data in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'MFA sync skipped: no user data in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('MFA sync skipped: no MFA data available')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'MFA sync skipped: no MFA data available' -Sev 'Debug'
                 }
             }
             catch {
