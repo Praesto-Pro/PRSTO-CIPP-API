@@ -20,10 +20,11 @@ function ConvertTo-ConfluenceEndpointPage {
         Array of CIPP endpoint objects from Intune managedDevices API.
         Expected properties: deviceName, userDisplayName, userPrincipalName,
         operatingSystem, osVersion, complianceState, lastSyncDateTime,
-        enrolledDateTime, model, manufacturer, serialNumber.
+        enrolledDateTime, model, manufacturer, serialNumber,
+        managedDeviceOwnerType, joinType.
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
-        Table columns: Device, User, OS, Compliance, Model, Serial, Last Sync
+        Table columns: Device, User, OS, Compliance, Ownership, Join Type, Model, Last Sync
     .EXAMPLE
         $adf = ConvertTo-ConfluenceEndpointPage -Endpoints $cippEndpoints
 
@@ -111,11 +112,12 @@ function ConvertTo-ConfluenceEndpointPage {
             'Unassigned'
         }
 
-        # OS with version
+        # OS with version - use non-breaking space to prevent wrapping
         $osDisplay = if ($endpoint.operatingSystem) {
             $os = $endpoint.operatingSystem
             if ($endpoint.osVersion) {
-                "$os $($endpoint.osVersion)"
+                # Use non-breaking space between OS and version to prevent wrapping
+                "$os`u{00A0}$($endpoint.osVersion)"
             }
             else {
                 $os
@@ -138,6 +140,35 @@ function ConvertTo-ConfluenceEndpointPage {
             }
         }
 
+        # Ownership (managedDeviceOwnerType) - Personal vs Corporate
+        $ownership = if ($endpoint.managedDeviceOwnerType) {
+            switch ($endpoint.managedDeviceOwnerType.ToLower()) {
+                'company' { 'Corporate' }
+                'personal' { 'Personal' }
+                default { $endpoint.managedDeviceOwnerType }
+            }
+        }
+        else {
+            'Unknown'
+        }
+
+        # Join Type (joinType or derived from other properties)
+        $joinType = if ($endpoint.joinType) {
+            switch ($endpoint.joinType.ToLower()) {
+                'azureadjoined' { 'Azure AD Joined' }
+                'azureadregistered' { 'Azure AD Registered' }
+                'hybridazureadjoined' { 'Hybrid Joined' }
+                default { $endpoint.joinType }
+            }
+        }
+        elseif ($endpoint.azureADRegistered -eq $true -and $endpoint.azureADDeviceId) {
+            # Fallback: determine from registration state
+            'Azure AD Registered'
+        }
+        else {
+            ''
+        }
+
         # Model (manufacturer + model if both available)
         $modelDisplay = if ($endpoint.model) {
             if ($endpoint.manufacturer -and $endpoint.manufacturer -ne 'Unknown') {
@@ -150,9 +181,6 @@ function ConvertTo-ConfluenceEndpointPage {
         else {
             ''
         }
-
-        # Serial number
-        $serialNumber = if ($endpoint.serialNumber) { $endpoint.serialNumber } else { '' }
 
         # Last sync - format as date only
         $lastSync = ''
@@ -170,14 +198,15 @@ function ConvertTo-ConfluenceEndpointPage {
             'User'       = $assignedUser
             'OS'         = $osDisplay
             'Compliance' = $complianceDisplay
+            'Ownership'  = $ownership
+            'Join Type'  = $joinType
             'Model'      = $modelDisplay
-            'Serial'     = $serialNumber
             'Last Sync'  = $lastSync
         }
     }
 
     # Create table with all columns
-    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Model', 'Serial', 'Last Sync'
+    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Ownership', 'Join Type', 'Model', 'Last Sync'
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)
