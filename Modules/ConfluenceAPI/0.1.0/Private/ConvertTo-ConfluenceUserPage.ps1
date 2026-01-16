@@ -17,15 +17,15 @@ function ConvertTo-ConfluenceUserPage {
         Returns an ADF JSON string that can be used directly with
         New-ConfluencePage -Body parameter.
     .PARAMETER Users
-        Array of CIPP user objects from ListGraphRequest API.
+        Array of CIPP user objects from Graph API.
         Expected properties: displayName, userPrincipalName, accountEnabled,
-        userType, assignedLicenses.
+        userType, assignedLicenses, signInActivity (optional).
     .PARAMETER Licenses
         Optional license inventory array for SKU name lookup.
         Expected properties: skuId, skuPartNumber.
     .PARAMETER MFAData
-        Optional MFA report data array for MFA status lookup.
-        Expected properties: UPN, MFARegistration.
+        Optional MFA report data array from Get-CIPPMFAState for MFA status lookup.
+        Expected properties: UPN, MFARegistration, PerUser, CoveredBySD, CoveredByCA.
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
     .EXAMPLE
@@ -106,12 +106,13 @@ function ConvertTo-ConfluenceUserPage {
     }
 
     # Build MFA lookup hashtable (case-insensitive for UPN matching)
+    # Store full MFA user object to access all properties (MFARegistration, PerUser, CoveredBySD, CoveredByCA)
     $mfaLookup = @{}
     if ($MFAData) {
         foreach ($mfaUser in $MFAData) {
             if ($mfaUser.UPN) {
                 # Normalize UPN to lowercase for case-insensitive lookup
-                $mfaLookup[$mfaUser.UPN.ToLower()] = $mfaUser.MFARegistration
+                $mfaLookup[$mfaUser.UPN.ToLower()] = $mfaUser
             }
         }
         Write-Verbose "Created MFA lookup with $($mfaLookup.Count) entries"
@@ -200,26 +201,71 @@ function ConvertTo-ConfluenceUserPage {
             }
         }
 
-        # MFA mapping (AC5) - use lowercase for case-insensitive lookup
+        # MFA mapping (AC5) - use full MFA data for accurate status
         $mfaStatus = 'Unknown'
         if ($mfaLookup.Count -gt 0 -and $user.userPrincipalName) {
             $upnLower = $user.userPrincipalName.ToLower()
             if ($mfaLookup.ContainsKey($upnLower)) {
-                $mfaStatus = if ($mfaLookup[$upnLower]) { 'Registered' } else { 'Not Registered' }
+                $mfaUser = $mfaLookup[$upnLower]
+                # Determine MFA status using same logic as MFA Report
+                if ($mfaUser.PerUser -and $mfaUser.PerUser.ToLower() -eq 'enforced') {
+                    $mfaStatus = 'Enforced'
+                }
+                elseif (($mfaUser.PerUser -and $mfaUser.PerUser.ToLower() -eq 'enabled') -or $mfaUser.MFARegistration -eq $true) {
+                    $mfaStatus = 'Enabled'
+                }
+                elseif ($mfaUser.CoveredBySD -eq $true -or ($mfaUser.CoveredByCA -and $mfaUser.CoveredByCA -like 'Enforced*')) {
+                    $mfaStatus = 'Protected'
+                }
+                else {
+                    $mfaStatus = 'Not Protected'
+                }
             }
+        }
+
+        # Last Login - use signInActivity from beta API
+        $lastLogin = ''
+        if ($user.signInActivity) {
+            # Use most recent of interactive or non-interactive sign-in
+            $lastInteractive = $user.signInActivity.lastSignInDateTime
+            $lastNonInteractive = $user.signInActivity.lastNonInteractiveSignInDateTime
+
+            $lastSignIn = $null
+            if ($lastInteractive -and $lastNonInteractive) {
+                $lastSignIn = if ([DateTime]$lastInteractive -gt [DateTime]$lastNonInteractive) { $lastInteractive } else { $lastNonInteractive }
+            }
+            elseif ($lastInteractive) {
+                $lastSignIn = $lastInteractive
+            }
+            elseif ($lastNonInteractive) {
+                $lastSignIn = $lastNonInteractive
+            }
+
+            if ($lastSignIn) {
+                try {
+                    $lastLogin = ([DateTime]$lastSignIn).ToString('yyyy-MM-dd')
+                }
+                catch {
+                    $lastLogin = $lastSignIn.ToString().Substring(0, 10)
+                }
+            }
+        }
+        if (-not $lastLogin) {
+            $lastLogin = 'Never'
         }
 
         [PSCustomObject]@{
             DisplayName = $user.displayName
             Email       = $user.userPrincipalName
             Status      = $status
+            'Last Login' = $lastLogin
             Licenses    = $licenseNames
-            MFAStatus   = $mfaStatus
+            MFA         = $mfaStatus
         }
     }
 
     # Create table with specific column order
-    $table = New-ADFTable -InputObject $tableData -Property DisplayName, Email, Status, Licenses, MFAStatus
+    $table = New-ADFTable -InputObject $tableData -Property DisplayName, Email, Status, 'Last Login', Licenses, MFA
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $table)

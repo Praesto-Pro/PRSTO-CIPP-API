@@ -155,7 +155,11 @@ function Invoke-ConfluenceExtensionSync {
         # 5a: User Inventory
         if ($confluenceConfig.SyncUsers -ne $false) {
             try {
-                $users = @($ExtensionCache.Users)
+                # Fetch users directly with signInActivity for Last Login column
+                # Uses beta API to get signInActivity which isn't in the extension cache
+                Write-Verbose "Fetching user data with sign-in activity for tenant $TenantFilter"
+                $usersUri = "https://graph.microsoft.com/beta/users?`$top=999&`$select=id,accountEnabled,displayName,userPrincipalName,userType,assignedLicenses,signInActivity,createdDateTime"
+                $users = @(New-GraphGetRequest -uri $usersUri -tenantid $TenantFilter)
                 $userCount = $users.Count
                 Write-Verbose "Syncing user inventory ($userCount users)"
 
@@ -165,9 +169,22 @@ function Invoke-ConfluenceExtensionSync {
                         Users    = $users
                     }
 
-                    # Add optional parameters if available in cache
+                    # Add licenses if available in cache
                     if ($ExtensionCache.Licenses) {
                         $syncParams['Licenses'] = @($ExtensionCache.Licenses)
+                    }
+
+                    # Fetch and add MFA data for accurate MFA status
+                    # This uses the same data source as the MFA Report for consistency
+                    try {
+                        $mfaData = @(Get-CIPPMFAState -TenantFilter $TenantFilter)
+                        if ($mfaData.Count -gt 0) {
+                            $syncParams['MFAData'] = $mfaData
+                            Write-Verbose "Added MFA data for $($mfaData.Count) users"
+                        }
+                    }
+                    catch {
+                        Write-Verbose "Could not fetch MFA data: $_"
                     }
 
                     $syncResult = Sync-ConfluenceUserInventory @syncParams
@@ -176,8 +193,8 @@ function Invoke-ConfluenceExtensionSync {
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('User sync skipped: no users in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'User sync skipped: no users in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('User sync skipped: no users found')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'User sync skipped: no users found' -Sev 'Debug'
                 }
             }
             catch {
