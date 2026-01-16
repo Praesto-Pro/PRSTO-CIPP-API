@@ -393,12 +393,21 @@ function Invoke-ConfluenceExtensionSync {
                         $siteId = if ($site.sharepointIds) { $site.sharepointIds.siteId } else { $site.id }
                         $usage = $sharePointUsage | Where-Object { $_.siteId -eq $siteId }
 
+                        # Use lastActivityDate from usage report if available (more accurate), fallback to lastModifiedDateTime
+                        $lastModified = if ($usage -and $usage.lastActivityDate) {
+                            $usage.lastActivityDate
+                        } elseif ($site.lastModifiedDateTime) {
+                            $site.lastModifiedDateTime
+                        } else {
+                            $null
+                        }
+
                         [PSCustomObject]@{
                             displayName          = $site.displayName
                             webUrl               = $site.webUrl
                             siteType             = 'SharePoint'
                             storageUsedInBytes   = if ($usage) { $usage.storageUsedInBytes } else { $null }
-                            lastModifiedDateTime = $site.lastModifiedDateTime
+                            lastModifiedDateTime = $lastModified
                             ownerDisplayName     = if ($usage) { $usage.ownerDisplayName } else { $null }
                             ownerPrincipalName   = if ($usage) { $usage.ownerPrincipalName } else { $null }
                             template             = if ($usage) { $usage.rootWebTemplate } else { $null }

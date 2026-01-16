@@ -80,7 +80,7 @@ function New-ADFTable {
             type    = 'table'
             attrs   = @{
                 isNumberColumnEnabled = $false
-                layout                = 'default'
+                layout                = 'wide'
             }
             content = @()
         }
