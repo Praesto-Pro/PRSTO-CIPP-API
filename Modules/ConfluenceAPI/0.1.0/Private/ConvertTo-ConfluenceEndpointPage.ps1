@@ -24,7 +24,7 @@ function ConvertTo-ConfluenceEndpointPage {
         managedDeviceOwnerType, joinType.
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
-        Table columns: Device, User, OS, Compliance, Ownership, Join Type, Model, Last Sync
+        Table columns: Device, User, OS, Compliance, Ownership, Join Type, Model, Serial, Last Sync
     .EXAMPLE
         $adf = ConvertTo-ConfluenceEndpointPage -Endpoints $cippEndpoints
 
@@ -182,6 +182,9 @@ function ConvertTo-ConfluenceEndpointPage {
             ''
         }
 
+        # Serial number
+        $serialNumber = if ($endpoint.serialNumber) { $endpoint.serialNumber } else { '' }
+
         # Last sync - format as date only
         $lastSync = ''
         if ($endpoint.lastSyncDateTime) {
@@ -201,12 +204,13 @@ function ConvertTo-ConfluenceEndpointPage {
             'Ownership'  = $ownership
             'Join Type'  = $joinType
             'Model'      = $modelDisplay
+            'Serial'     = $serialNumber
             'Last Sync'  = $lastSync
         }
     }
 
     # Create table with all columns
-    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Ownership', 'Join Type', 'Model', 'Last Sync'
+    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Ownership', 'Join Type', 'Model', 'Serial', 'Last Sync'
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)
