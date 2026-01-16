@@ -3,29 +3,27 @@ function ConvertTo-ConfluenceEndpointPage {
     .SYNOPSIS
         Transforms CIPP endpoint data into ADF content for Confluence pages.
     .DESCRIPTION
-        Converts CIPP endpoint objects (from Intune/Graph API) into Atlassian Document
+        Converts CIPP endpoint objects (from Intune managedDevices API) into Atlassian Document
         Format (ADF) content suitable for creating/updating Confluence pages. Displays
-        device inventory including compliance status and user assignment.
+        device inventory including compliance status, OS details, and user assignment.
 
         The function:
         - Maps device properties to readable column names
         - Converts compliance states to user-friendly labels
-        - Shows assigned user with fallback logic
+        - Shows OS with version information
+        - Formats dates for readability
         - Adds a timestamp for data freshness (FR44)
 
         Returns an ADF JSON string that can be used directly with
         New-ConfluencePage -Body parameter.
     .PARAMETER Endpoints
-        Array of CIPP endpoint objects from Intune/Graph API.
-        Expected properties: deviceName, operatingSystem, complianceState,
-        lastSyncDateTime, userPrincipalName, userDisplayName.
-    .PARAMETER Property
-        Optional array of column names to include in the table.
-        Valid values: 'Device Name', 'OS', 'Compliance', 'Assigned User', 'Last Sync'
-        Defaults to all columns if not specified.
+        Array of CIPP endpoint objects from Intune managedDevices API.
+        Expected properties: deviceName, userDisplayName, userPrincipalName,
+        operatingSystem, osVersion, complianceState, lastSyncDateTime,
+        enrolledDateTime, model, manufacturer, serialNumber.
     .OUTPUTS
         [string] - ADF JSON string ready for Confluence API
-        Table columns (default): Device Name, OS, Compliance, Assigned User, Last Sync
+        Table columns: Device, User, OS, Compliance, Model, Serial, Last Sync
     .EXAMPLE
         $adf = ConvertTo-ConfluenceEndpointPage -Endpoints $cippEndpoints
 
@@ -39,13 +37,13 @@ function ConvertTo-ConfluenceEndpointPage {
         This is a private function used internally by the ConfluenceAPI module.
         Part of Story 5.1 - Endpoint Data Transformer.
 
-        CIPP Data Source: Intune devices via Graph API
+        CIPP Data Source: Intune managedDevices via Graph API beta
 
         Compliance State Mappings:
         - compliant     -> Compliant
         - noncompliant  -> Non-Compliant
-        - inGracePeriod -> In Grace Period
-        - configmanager -> Config Manager
+        - inGracePeriod -> Grace Period
+        - configmanager -> ConfigMgr
         - unknown/null  -> Unknown
     .LINK
         New-ADFDocument
@@ -62,26 +60,19 @@ function ConvertTo-ConfluenceEndpointPage {
     [OutputType([string])]
     param(
         [Parameter()]
-        [object[]]$Endpoints,
-
-        [Parameter()]
-        [ValidateSet('Device Name', 'OS', 'Compliance', 'Assigned User', 'Last Sync')]
-        [string[]]$Property
+        [object[]]$Endpoints
     )
-
-    # Default columns if not specified
-    $defaultColumns = @('Device Name', 'OS', 'Compliance', 'Assigned User', 'Last Sync')
-    if (-not $Property) {
-        $Property = $defaultColumns
-    }
 
     # Handle empty/null input first
     if (-not $Endpoints -or $Endpoints.Count -eq 0) {
         Write-Verbose "No endpoints provided - returning empty state message"
         $doc = New-ADFDocument
         $heading = New-ADFHeading -Level 2 -Text 'Endpoint Inventory'
+        # Add timestamp even for empty state (FR44 compliance)
+        $utcTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')
+        $timestamp = New-ADFParagraph -Text "Data as of: $utcTime UTC"
         $message = New-ADFParagraph -Text 'No endpoint data available'
-        $doc = Add-ADFContent -Document $doc -Content @($heading, $message)
+        $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $message)
         return ConvertTo-ADF -InputObject $doc
     }
 
@@ -97,50 +88,99 @@ function ConvertTo-ConfluenceEndpointPage {
     $utcTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')
     $timestamp = New-ADFParagraph -Text "Data as of: $utcTime UTC"
 
+    # Generate summary
+    $totalDevices = $Endpoints.Count
+    $compliantCount = @($Endpoints | Where-Object { $_.complianceState -eq 'compliant' }).Count
+    $compliancePercent = if ($totalDevices -gt 0) { [math]::Round(($compliantCount / $totalDevices) * 100, 1) } else { 0 }
+    $summaryText = "Total Devices: $totalDevices | Compliant: $compliantCount ($compliancePercent%)"
+    $summary = New-ADFParagraph -Text $summaryText
+
     # Transform endpoints to table data
     $tableData = foreach ($endpoint in $Endpoints) {
-        # Compliance status mapping (AC5) - case-insensitive
+        # Device name
+        $deviceName = if ($endpoint.deviceName) { $endpoint.deviceName } else { 'Unknown' }
+
+        # User assignment display
+        $assignedUser = if ($endpoint.userDisplayName) {
+            $endpoint.userDisplayName
+        }
+        elseif ($endpoint.userPrincipalName) {
+            $endpoint.userPrincipalName
+        }
+        else {
+            'Unassigned'
+        }
+
+        # OS with version
+        $osDisplay = if ($endpoint.operatingSystem) {
+            $os = $endpoint.operatingSystem
+            if ($endpoint.osVersion) {
+                "$os $($endpoint.osVersion)"
+            }
+            else {
+                $os
+            }
+        }
+        else {
+            'Unknown'
+        }
+
+        # Compliance status mapping - case-insensitive
         $complianceDisplay = 'Unknown'
         if ($endpoint.complianceState) {
             $complianceDisplay = switch ($endpoint.complianceState.ToLower()) {
                 'compliant' { 'Compliant' }
                 'noncompliant' { 'Non-Compliant' }
-                'ingraceperiod' { 'In Grace Period' }
-                'configmanager' { 'Config Manager' }
+                'ingraceperiod' { 'Grace Period' }
+                'configmanager' { 'ConfigMgr' }
                 'unknown' { 'Unknown' }
-                default { 'Unknown' }
+                default { $endpoint.complianceState }
             }
         }
 
-        # User assignment display (AC3)
-        $assignedUser = 'Unassigned'
-        if ($endpoint.userDisplayName) {
-            $assignedUser = $endpoint.userDisplayName
+        # Model (manufacturer + model if both available)
+        $modelDisplay = if ($endpoint.model) {
+            if ($endpoint.manufacturer -and $endpoint.manufacturer -ne 'Unknown') {
+                "$($endpoint.manufacturer) $($endpoint.model)"
+            }
+            else {
+                $endpoint.model
+            }
         }
-        elseif ($endpoint.userPrincipalName) {
-            $assignedUser = $endpoint.userPrincipalName
+        else {
+            ''
         }
 
-        # Last sync with fallback
-        $lastSync = 'Never'
+        # Serial number
+        $serialNumber = if ($endpoint.serialNumber) { $endpoint.serialNumber } else { '' }
+
+        # Last sync - format as date only
+        $lastSync = ''
         if ($endpoint.lastSyncDateTime) {
-            $lastSync = $endpoint.lastSyncDateTime
+            try {
+                $lastSync = ([DateTime]$endpoint.lastSyncDateTime).ToString('yyyy-MM-dd')
+            }
+            catch {
+                $lastSync = $endpoint.lastSyncDateTime.ToString().Substring(0, 10)
+            }
         }
 
         [PSCustomObject]@{
-            'Device Name'   = if ($endpoint.deviceName) { $endpoint.deviceName } else { '' }
-            'OS'            = if ($endpoint.operatingSystem) { $endpoint.operatingSystem } else { '' }
-            'Compliance'    = $complianceDisplay
-            'Assigned User' = $assignedUser
-            'Last Sync'     = $lastSync
+            'Device'     = $deviceName
+            'User'       = $assignedUser
+            'OS'         = $osDisplay
+            'Compliance' = $complianceDisplay
+            'Model'      = $modelDisplay
+            'Serial'     = $serialNumber
+            'Last Sync'  = $lastSync
         }
     }
 
-    # Create table with specified columns (or default all)
-    $table = New-ADFTable -InputObject $tableData -Property $Property
+    # Create table with all columns
+    $table = New-ADFTable -InputObject $tableData -Property 'Device', 'User', 'OS', 'Compliance', 'Model', 'Serial', 'Last Sync'
 
     # Assemble document
-    $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $table)
+    $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $summary, $table)
 
     Write-Verbose "Created endpoint page with $($Endpoints.Count) device(s)"
     return ConvertTo-ADF -InputObject $doc

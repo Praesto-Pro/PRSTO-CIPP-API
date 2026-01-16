@@ -211,7 +211,10 @@ function Invoke-ConfluenceExtensionSync {
         # 5b: Endpoint/Device Inventory
         if ($confluenceConfig.SyncDevices -ne $false) {
             try {
-                $devices = @($ExtensionCache.Devices)
+                # Fetch devices directly from Intune managedDevices API (same as Invoke-ListDevices)
+                # This provides richer data than the extension cache
+                Write-Verbose "Fetching Intune managed devices for tenant $TenantFilter"
+                $devices = @(New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices' -tenantid $TenantFilter)
                 $deviceCount = $devices.Count
                 Write-Verbose "Syncing endpoint inventory ($deviceCount devices)"
 
@@ -222,8 +225,8 @@ function Invoke-ConfluenceExtensionSync {
                     Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync complete: $deviceCount devices synced (Action: $($syncResult.Action))" -Sev 'Info'
                 }
                 else {
-                    $CompanyResult.Logs.Add('Device sync skipped: no devices in cache')
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'Device sync skipped: no devices in cache' -Sev 'Debug'
+                    $CompanyResult.Logs.Add('Device sync skipped: no devices found')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'Device sync skipped: no devices found' -Sev 'Debug'
                 }
             }
             catch {
