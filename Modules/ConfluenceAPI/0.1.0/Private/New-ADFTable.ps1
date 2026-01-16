@@ -22,8 +22,8 @@ function New-ADFTable {
     .PARAMETER Layout
         Table layout mode. Valid values: 'default', 'wide', 'full-width'.
         - default: Standard table width
-        - wide: Extended width (default if not specified)
-        - full-width: Spans entire page width
+        - wide: Extended width
+        - full-width: Spans entire page width (default)
     .OUTPUTS
         [hashtable] - ADF table node structure ready to be added to an ADF document
     .EXAMPLE
@@ -67,7 +67,7 @@ function New-ADFTable {
 
         [Parameter()]
         [ValidateSet('default', 'wide', 'full-width')]
-        [string]$Layout = 'wide'
+        [string]$Layout = 'full-width'
     )
 
     begin {
