@@ -19,7 +19,8 @@ function ConvertTo-ConfluenceUserPage {
     .PARAMETER Users
         Array of CIPP user objects from Graph API.
         Expected properties: displayName, userPrincipalName, accountEnabled,
-        userType, assignedLicenses, signInActivity (optional).
+        userType, assignedLicenses, signInActivity, jobTitle, manager,
+        officeLocation, mobilePhone (optional).
     .PARAMETER Licenses
         Optional license inventory array for SKU name lookup.
         Expected properties: skuId, skuPartNumber.
@@ -254,18 +255,42 @@ function ConvertTo-ConfluenceUserPage {
             $lastLogin = 'Never'
         }
 
+        # Job Title
+        $title = if ($user.jobTitle) { $user.jobTitle } else { '' }
+
+        # Manager - can be an object with displayName or just a string
+        $managerName = ''
+        if ($user.manager) {
+            if ($user.manager.displayName) {
+                $managerName = $user.manager.displayName
+            }
+            elseif ($user.manager -is [string]) {
+                $managerName = $user.manager
+            }
+        }
+
+        # Office Location
+        $office = if ($user.officeLocation) { $user.officeLocation } else { '' }
+
+        # Mobile Phone
+        $mobile = if ($user.mobilePhone) { $user.mobilePhone } else { '' }
+
         [PSCustomObject]@{
-            DisplayName = $user.displayName
-            Email       = $user.userPrincipalName
-            Status      = $status
+            DisplayName  = $user.displayName
+            Email        = $user.userPrincipalName
+            Title        = $title
+            Manager      = $managerName
+            Office       = $office
+            Mobile       = $mobile
+            Status       = $status
             'Last Login' = $lastLogin
-            Licenses    = $licenseNames
-            MFA         = $mfaStatus
+            Licenses     = $licenseNames
+            MFA          = $mfaStatus
         }
     }
 
     # Create table with specific column order
-    $table = New-ADFTable -InputObject $tableData -Property DisplayName, Email, Status, 'Last Login', Licenses, MFA
+    $table = New-ADFTable -InputObject $tableData -Property DisplayName, Email, Title, Manager, Office, Mobile, Status, 'Last Login', Licenses, MFA
 
     # Assemble document
     $doc = Add-ADFContent -Document $doc -Content @($heading, $timestamp, $table)

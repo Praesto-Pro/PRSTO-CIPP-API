@@ -158,7 +158,7 @@ function Invoke-ConfluenceExtensionSync {
                 # Fetch users directly with signInActivity for Last Login column
                 # Uses beta API to get signInActivity which isn't in the extension cache
                 Write-Verbose "Fetching user data with sign-in activity for tenant $TenantFilter"
-                $usersUri = "https://graph.microsoft.com/beta/users?`$top=999&`$select=id,accountEnabled,displayName,userPrincipalName,userType,assignedLicenses,signInActivity,createdDateTime"
+                $usersUri = "https://graph.microsoft.com/beta/users?`$top=999&`$select=id,accountEnabled,displayName,userPrincipalName,userType,assignedLicenses,signInActivity,createdDateTime,jobTitle,officeLocation,mobilePhone,manager"
                 $users = @(New-GraphGetRequest -uri $usersUri -tenantid $TenantFilter)
                 $userCount = $users.Count
                 Write-Verbose "Syncing user inventory ($userCount users)"
