@@ -11,6 +11,8 @@ SendNotifications/config.json
 .env
 Output/
 index.md
+node_modules/.yarn-integrity
+yarn.lock
 
 # Cursor IDE
 .cursor/rules
