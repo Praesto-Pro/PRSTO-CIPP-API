@@ -3,13 +3,15 @@ function Sync-ConfluenceLicenseReport {
     .SYNOPSIS
         Syncs CIPP license report to a Confluence page.
     .DESCRIPTION
-        Creates or updates a License Report page in the specified Confluence space
-        with license data from CIPP. The page displays license summary with
+        Creates or updates an M365 License Report page as a subpage under the
+        specified parent hierarchy (defaults to 'Infrastructure Documentation > Cloud Services')
+        in the Confluence space. The page displays license summary with
         quantities and optionally user assignments.
 
         The function:
         - Validates the target space exists
-        - Searches for an existing License Report page
+        - Finds or creates the parent page hierarchy
+        - Searches for an existing M365 License Report page under that parent
         - Creates a new page or updates the existing one
         - Returns a PSCustomObject with page details
 
@@ -24,17 +26,19 @@ function Sync-ConfluenceLicenseReport {
         Optional array of CIPP user objects with assignedLicenses for
         generating the license assignments table.
     .PARAMETER PageTitle
-        Title for the page. Defaults to 'License Report'.
-    .PARAMETER ParentPageId
-        Optional parent page ID for hierarchical organization.
-        Note: Only applies when creating new pages. Existing pages are not moved.
-        Use Move-ConfluencePage to relocate an existing page.
+        Title for the page. Defaults to 'M365 License Report'.
+    .PARAMETER ParentPageTitle
+        Title for the immediate parent page. Defaults to 'Cloud Services'.
+        The parent page will be created if it doesn't exist.
+    .PARAMETER GrandparentPageTitle
+        Title for the grandparent page. Defaults to 'Infrastructure Documentation'.
+        The grandparent page will be created if it doesn't exist.
     .OUTPUTS
         [PSCustomObject] - Object with Id, Title, SpaceKey, Version, Action properties
     .EXAMPLE
         Sync-ConfluenceLicenseReport -SpaceKey 'CONTOSO' -Licenses $cippLicenses
 
-        Creates or updates the License Report page in the CONTOSO space.
+        Creates or updates the M365 License Report page under 'Infrastructure Documentation > Cloud Services' in the CONTOSO space.
     .EXAMPLE
         Sync-ConfluenceLicenseReport -SpaceKey 'CONTOSO' -Licenses $licenses -Users $users
 
@@ -44,9 +48,9 @@ function Sync-ConfluenceLicenseReport {
 
         Shows what would be synced without making changes.
     .EXAMPLE
-        Sync-ConfluenceLicenseReport -SpaceKey 'CONTOSO' -Licenses $licenses -ParentPageId '12345'
+        Sync-ConfluenceLicenseReport -SpaceKey 'CONTOSO' -Licenses $licenses -ParentPageTitle 'Microsoft 365'
 
-        Creates or updates the page as a child of the specified parent page.
+        Creates M365 License Report under a custom parent page.
     .NOTES
         This is a public function in the ConfluenceAPI module.
         Part of Story 5.4 - License Report Sync Function.
@@ -81,10 +85,13 @@ function Sync-ConfluenceLicenseReport {
         [object[]]$Users,
 
         [Parameter()]
-        [string]$PageTitle = 'License Report',
+        [string]$PageTitle = 'M365 License Report',
 
         [Parameter()]
-        [string]$ParentPageId
+        [string]$ParentPageTitle = 'Cloud Services',
+
+        [Parameter()]
+        [string]$GrandparentPageTitle = 'Infrastructure Documentation'
     )
 
     Write-Verbose "Syncing license report to space '$SpaceKey'"
@@ -101,6 +108,47 @@ function Sync-ConfluenceLicenseReport {
             )
         )
     }
+
+    # Find or create grandparent page (e.g., 'Infrastructure Documentation')
+    Write-Verbose "Finding or creating grandparent page '$GrandparentPageTitle' in space '$SpaceKey'"
+    $grandparentPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $GrandparentPageTitle
+
+    if (-not $grandparentPage) {
+        Write-Verbose "Grandparent page '$GrandparentPageTitle' not found - creating it"
+        if ($PSCmdlet.ShouldProcess($GrandparentPageTitle, "Create grandparent Confluence page")) {
+            $grandparentPage = New-ConfluencePage -SpaceKey $SpaceKey -Title $GrandparentPageTitle
+            Write-Verbose "Created grandparent page '$GrandparentPageTitle' (ID: $($grandparentPage.Id))"
+        }
+    }
+    else {
+        Write-Verbose "Found existing grandparent page '$GrandparentPageTitle' (ID: $($grandparentPage.Id))"
+    }
+
+    $grandparentPageId = if ($grandparentPage) { $grandparentPage.Id } else { $null }
+
+    # Find or create parent page (e.g., 'Cloud Services') under grandparent
+    Write-Verbose "Finding or creating parent page '$ParentPageTitle' in space '$SpaceKey'"
+    $parentPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $ParentPageTitle
+
+    if (-not $parentPage) {
+        Write-Verbose "Parent page '$ParentPageTitle' not found - creating it under '$GrandparentPageTitle'"
+        if ($PSCmdlet.ShouldProcess($ParentPageTitle, "Create parent Confluence page")) {
+            $createParentParams = @{
+                SpaceKey = $SpaceKey
+                Title    = $ParentPageTitle
+            }
+            if ($grandparentPageId) {
+                $createParentParams['ParentId'] = $grandparentPageId
+            }
+            $parentPage = New-ConfluencePage @createParentParams
+            Write-Verbose "Created parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+        }
+    }
+    else {
+        Write-Verbose "Found existing parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+    }
+
+    $parentPageId = if ($parentPage) { $parentPage.Id } else { $null }
 
     # Generate ADF content using Story 5.3 transformer
     $adfContent = ConvertTo-ConfluenceLicensePage -Licenses $Licenses -Users $Users
@@ -147,7 +195,7 @@ function Sync-ConfluenceLicenseReport {
         }
     }
     else {
-        Write-Verbose "No existing page found - creating new page"
+        Write-Verbose "No existing page found - creating new page under '$GrandparentPageTitle > $ParentPageTitle'"
         if ($PSCmdlet.ShouldProcess($PageTitle, "Create Confluence page")) {
             try {
                 $createParams = @{
@@ -155,16 +203,15 @@ function Sync-ConfluenceLicenseReport {
                     Title    = $PageTitle
                     Body     = $adfContent
                 }
-                if ($ParentPageId) {
-                    $createParams['ParentId'] = $ParentPageId
-                    Write-Verbose "Creating page under parent ID: $ParentPageId"
+                if ($parentPageId) {
+                    $createParams['ParentId'] = $parentPageId
                 }
                 $result = New-ConfluencePage @createParams
 
                 # Update cache after successful create (Story 10.4)
                 Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
 
-                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
+                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id)) under '$GrandparentPageTitle > $ParentPageTitle'"
                 return [PSCustomObject]@{
                     Id       = $result.Id
                     Title    = $result.Title
