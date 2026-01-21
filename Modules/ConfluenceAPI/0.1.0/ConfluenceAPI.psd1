@@ -47,6 +47,7 @@
         'Sync-ConfluenceMFAReport',
         'Sync-ConfluenceTeamsInventory',
         'Sync-ConfluenceSharePointInventory',
+        'Sync-ConfluenceSaaSInventory',
         # Client Space Management (Epic 7)
         'New-ConfluenceClientSpace',
         'Get-ConfluenceTenantMapping',
