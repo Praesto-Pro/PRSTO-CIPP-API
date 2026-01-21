@@ -8,7 +8,10 @@ function ConvertTo-ConfluenceSaaSPage {
         built-in applications to show only third-party SaaS applications.
 
         The function:
-        - Filters out Microsoft applications (appOwnerOrganizationId = f8cdef31-a31e-4b4a-93e4-5f571e91255a)
+        - Filters out Microsoft applications by:
+          * appOwnerOrganizationId = f8cdef31-a31e-4b4a-93e4-5f571e91255a
+          * Publishers: "Microsoft", "Microsoft Accounts"
+          * App names: "Azure Media Service", "Management Object-1573247360274"
         - Creates a summary section with total third-party app count
         - Creates a table showing each app's details
         - Optionally shows credential expiry warnings
@@ -68,6 +71,18 @@ function ConvertTo-ConfluenceSaaSPage {
     # Microsoft's tenant ID - used to filter out built-in Microsoft apps
     $MicrosoftTenantId = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a'
 
+    # Publishers to exclude (Microsoft-related)
+    $ExcludedPublishers = @(
+        'Microsoft'
+        'Microsoft Accounts'
+    )
+
+    # Specific application names to exclude
+    $ExcludedAppNames = @(
+        'Azure Media Service'
+        'Management Object-1573247360274'
+    )
+
     # Handle empty/null input first
     if (-not $ServicePrincipals -or $ServicePrincipals.Count -eq 0) {
         Write-Verbose "No service principal data provided - returning empty state message"
@@ -84,7 +99,13 @@ function ConvertTo-ConfluenceSaaSPage {
     # Filter out Microsoft apps unless explicitly included
     if (-not $IncludeMicrosoftApps) {
         $filteredApps = $ServicePrincipals | Where-Object {
-            $_.appOwnerOrganizationId -ne $MicrosoftTenantId
+            # Filter by Microsoft tenant ID
+            $_.appOwnerOrganizationId -ne $MicrosoftTenantId -and
+            # Filter by publisher name
+            $_.publisherName -notin $ExcludedPublishers -and
+            (-not $_.verifiedPublisher -or $_.verifiedPublisher.displayName -notin $ExcludedPublishers) -and
+            # Filter by specific app names
+            $_.displayName -notin $ExcludedAppNames
         }
         Write-Verbose "Filtered from $($ServicePrincipals.Count) to $($filteredApps.Count) apps (excluded Microsoft apps)"
     }
