@@ -3,13 +3,15 @@ function Sync-ConfluenceUserInventory {
     .SYNOPSIS
         Syncs CIPP user inventory to a Confluence page.
     .DESCRIPTION
-        Creates or updates a User Inventory page in the specified Confluence space
-        with user data from CIPP. The page displays user information in table format
-        including status, licenses, and MFA status.
+        Creates or updates a User Directory page as a subpage under the specified
+        parent page (defaults to 'Overview & Contacts') in the Confluence space.
+        The page displays user information in table format including status,
+        licenses, and MFA status.
 
         The function:
         - Validates the target space exists
-        - Searches for an existing User Inventory page
+        - Finds or creates the parent page (e.g., 'Overview & Contacts')
+        - Searches for an existing User Directory page under that parent
         - Creates a new page or updates the existing one
         - Returns a PSCustomObject with page details
 
@@ -27,17 +29,24 @@ function Sync-ConfluenceUserInventory {
         Optional MFA report data array for MFA status lookup.
         When provided, displays MFA registration status per user.
     .PARAMETER PageTitle
-        Title for the page. Defaults to 'User Inventory'.
+        Title for the page. Defaults to 'User Directory'.
+    .PARAMETER ParentPageTitle
+        Title for the parent page. Defaults to 'Overview & Contacts'.
+        The parent page will be created if it doesn't exist.
     .OUTPUTS
         [PSCustomObject] - Object with Id, Title, SpaceKey, Version, Action properties
     .EXAMPLE
         Sync-ConfluenceUserInventory -SpaceKey 'CONTOSO' -Users $cippUsers
 
-        Creates or updates the User Inventory page in the CONTOSO space.
+        Creates or updates the User Directory page under 'Overview & Contacts' in the CONTOSO space.
     .EXAMPLE
         Sync-ConfluenceUserInventory -SpaceKey 'CONTOSO' -Users $users -Licenses $licenses -MFAData $mfa
 
         Syncs user inventory with license names and MFA status.
+    .EXAMPLE
+        Sync-ConfluenceUserInventory -SpaceKey 'CONTOSO' -Users $users -ParentPageTitle 'Company Info'
+
+        Creates User Directory under a custom parent page.
     .EXAMPLE
         Sync-ConfluenceUserInventory -SpaceKey 'CONTOSO' -Users $users -WhatIf
 
@@ -79,7 +88,10 @@ function Sync-ConfluenceUserInventory {
         [object[]]$MFAData,
 
         [Parameter()]
-        [string]$PageTitle = 'User Inventory'
+        [string]$PageTitle = 'User Directory',
+
+        [Parameter()]
+        [string]$ParentPageTitle = 'Overview & Contacts'
     )
 
     Write-Verbose "Syncing user inventory to space '$SpaceKey'"
@@ -96,6 +108,23 @@ function Sync-ConfluenceUserInventory {
             )
         )
     }
+
+    # Find or create parent page (e.g., 'Overview & Contacts')
+    Write-Verbose "Finding or creating parent page '$ParentPageTitle' in space '$SpaceKey'"
+    $parentPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $ParentPageTitle
+
+    if (-not $parentPage) {
+        Write-Verbose "Parent page '$ParentPageTitle' not found - creating it"
+        if ($PSCmdlet.ShouldProcess($ParentPageTitle, "Create parent Confluence page")) {
+            $parentPage = New-ConfluencePage -SpaceKey $SpaceKey -Title $ParentPageTitle
+            Write-Verbose "Created parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+        }
+    }
+    else {
+        Write-Verbose "Found existing parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+    }
+
+    $parentPageId = if ($parentPage) { $parentPage.Id } else { $null }
 
     # Generate ADF content using Story 4.1 transformer
     $adfContent = ConvertTo-ConfluenceUserPage -Users $Users -Licenses $Licenses -MFAData $MFAData
@@ -142,15 +171,25 @@ function Sync-ConfluenceUserInventory {
         }
     }
     else {
-        Write-Verbose "No existing page found - creating new page"
+        Write-Verbose "No existing page found - creating new page under parent '$ParentPageTitle'"
         if ($PSCmdlet.ShouldProcess($PageTitle, "Create Confluence page")) {
             try {
-                $result = New-ConfluencePage -SpaceKey $SpaceKey -Title $PageTitle -Body $adfContent
+                # Create as child of parent page
+                $newPageParams = @{
+                    SpaceKey = $SpaceKey
+                    Title    = $PageTitle
+                    Body     = $adfContent
+                }
+                if ($parentPageId) {
+                    $newPageParams['ParentId'] = $parentPageId
+                }
+
+                $result = New-ConfluencePage @newPageParams
 
                 # Update cache after successful create (Story 10.4)
                 Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
 
-                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
+                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id)) under parent '$ParentPageTitle'"
                 return [PSCustomObject]@{
                     Id       = $result.Id
                     Title    = $result.Title
