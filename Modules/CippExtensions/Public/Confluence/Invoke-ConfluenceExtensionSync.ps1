@@ -44,6 +44,7 @@ function Invoke-ConfluenceExtensionSync {
         - Sync-ConfluenceMFAReport (Epic 6)
         - Sync-ConfluenceTeamsInventory (Epic 6)
         - Sync-ConfluenceSharePointInventory (Epic 6)
+        - Sync-ConfluenceSaaSInventory (Third-Party SaaS Apps)
     .LINK
         Connect-ConfluenceAPI
     .LINK
@@ -474,6 +475,37 @@ function Invoke-ConfluenceExtensionSync {
         else {
             Write-Verbose 'SharePoint sync disabled in configuration'
             $CompanyResult.Logs.Add('SharePoint sync skipped: disabled in configuration')
+        }
+
+        # 5g: Third-Party SaaS Applications
+        if ($confluenceConfig.SyncSaaSApps -ne $false) {
+            try {
+                # Fetch service principals from Microsoft Graph
+                # Filter out Microsoft built-in apps (done by the transformer)
+                Write-Verbose "Fetching service principals for tenant $TenantFilter"
+                $servicePrincipalsUri = "https://graph.microsoft.com/beta/servicePrincipals?`$select=id,appId,displayName,createdDateTime,accountEnabled,homepage,publisherName,signInAudience,replyUrls,verifiedPublisher,info,api,appOwnerOrganizationId,tags,passwordCredentials,keyCredentials&`$count=true&`$top=999"
+                $servicePrincipals = @(New-GraphGetRequest -uri $servicePrincipalsUri -tenantid $TenantFilter -ComplexFilter)
+                Write-Verbose "Fetched $($servicePrincipals.Count) service principals"
+
+                if ($servicePrincipals.Count -gt 0) {
+                    $syncResult = Sync-ConfluenceSaaSInventory -SpaceKey $SpaceKey -ServicePrincipals $servicePrincipals
+                    $CompanyResult.Logs.Add("SaaS Apps sync complete: $($servicePrincipals.Count) service principals processed")
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SaaS Apps sync complete: $($servicePrincipals.Count) service principals (Action: $($syncResult.Action))" -Sev 'Info'
+                }
+                else {
+                    $CompanyResult.Logs.Add('SaaS Apps sync skipped: no service principals found')
+                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message 'SaaS Apps sync skipped: no service principals found' -Sev 'Debug'
+                }
+            }
+            catch {
+                $CompanyResult.Errors.Add("SaaS Apps sync failed: $_")
+                Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SaaS Apps sync failed: $_" -Sev 'Error'
+                Write-Verbose "SaaS Apps sync error: $_"
+            }
+        }
+        else {
+            Write-Verbose 'SaaS Apps sync disabled in configuration'
+            $CompanyResult.Logs.Add('SaaS Apps sync skipped: disabled in configuration')
         }
 
         $CompanyResult.Logs.Add('Confluence Extension Sync completed')
