@@ -3,13 +3,15 @@ function Sync-ConfluenceMFAReport {
     .SYNOPSIS
         Syncs CIPP MFA status report to a Confluence page.
     .DESCRIPTION
-        Creates or updates an MFA Status page in the specified Confluence space
-        with MFA data from CIPP. The page displays MFA coverage summary with
+        Creates or updates an M365 MFA Status page as a subpage under the
+        specified parent page (defaults to 'Security & Compliance') in the
+        Confluence space. The page displays MFA coverage summary with
         per-user MFA status, methods, and protection policies.
 
         The function:
         - Validates the target space exists
-        - Searches for an existing MFA Status page
+        - Finds or creates the parent page (e.g., 'Security & Compliance')
+        - Searches for an existing M365 MFA Status page under that parent
         - Creates a new page or updates the existing one
         - Returns a PSCustomObject with page details
 
@@ -23,29 +25,24 @@ function Sync-ConfluenceMFAReport {
         perUserMfaState, isSecurityDefaultsCovered, isConditionalAccessCovered,
         authenticationMethods.
     .PARAMETER PageTitle
-        Title for the page. Defaults to 'MFA Status'.
-    .PARAMETER ParentPageId
-        Optional parent page ID for hierarchical organization.
-        Note: Only applies when creating new pages. Existing pages are not moved.
-        Use Move-ConfluencePage to relocate an existing page.
+        Title for the page. Defaults to 'M365 MFA Status'.
+    .PARAMETER ParentPageTitle
+        Title for the parent page. Defaults to 'Security & Compliance'.
+        The parent page will be created if it doesn't exist.
     .OUTPUTS
         [PSCustomObject] - Object with Id, Title, SpaceKey, Version, Action properties
     .EXAMPLE
         Sync-ConfluenceMFAReport -SpaceKey 'CONTOSO' -MFAData $cippMfaReport
 
-        Creates or updates the MFA Status page in the CONTOSO space.
+        Creates or updates the M365 MFA Status page under 'Security & Compliance' in the CONTOSO space.
     .EXAMPLE
         Sync-ConfluenceMFAReport -SpaceKey 'CONTOSO' -MFAData $mfaData -WhatIf
 
         Shows what would be synced without making changes.
     .EXAMPLE
-        Sync-ConfluenceMFAReport -SpaceKey 'CONTOSO' -MFAData $mfaData -ParentPageId '12345'
+        Sync-ConfluenceMFAReport -SpaceKey 'CONTOSO' -MFAData $mfaData -ParentPageTitle 'Identity Security'
 
-        Creates or updates the page as a child of the specified parent page.
-    .EXAMPLE
-        Sync-ConfluenceMFAReport -SpaceKey 'CONTOSO' -MFAData $mfaData -PageTitle 'Security - MFA Status'
-
-        Creates or updates the page with a custom title.
+        Creates M365 MFA Status under a custom parent page.
     .NOTES
         This is a public function in the ConfluenceAPI module.
         Part of Story 6.1 - MFA Status Transformer & Sync.
@@ -77,10 +74,10 @@ function Sync-ConfluenceMFAReport {
         [object[]]$MFAData,
 
         [Parameter()]
-        [string]$PageTitle = 'MFA Status',
+        [string]$PageTitle = 'M365 MFA Status',
 
         [Parameter()]
-        [string]$ParentPageId
+        [string]$ParentPageTitle = 'Security & Compliance'
     )
 
     Write-Verbose "Syncing MFA report to space '$SpaceKey'"
@@ -97,6 +94,23 @@ function Sync-ConfluenceMFAReport {
             )
         )
     }
+
+    # Find or create parent page (e.g., 'Security & Compliance')
+    Write-Verbose "Finding or creating parent page '$ParentPageTitle' in space '$SpaceKey'"
+    $parentPage = Find-ConfluencePageByTitle -SpaceKey $SpaceKey -Title $ParentPageTitle
+
+    if (-not $parentPage) {
+        Write-Verbose "Parent page '$ParentPageTitle' not found - creating it"
+        if ($PSCmdlet.ShouldProcess($ParentPageTitle, "Create parent Confluence page")) {
+            $parentPage = New-ConfluencePage -SpaceKey $SpaceKey -Title $ParentPageTitle
+            Write-Verbose "Created parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+        }
+    }
+    else {
+        Write-Verbose "Found existing parent page '$ParentPageTitle' (ID: $($parentPage.Id))"
+    }
+
+    $parentPageId = if ($parentPage) { $parentPage.Id } else { $null }
 
     # Generate ADF content using Story 6.1 transformer
     $adfContent = ConvertTo-ConfluenceMFAPage -MFAData $MFAData
@@ -143,7 +157,7 @@ function Sync-ConfluenceMFAReport {
         }
     }
     else {
-        Write-Verbose "No existing page found - creating new page"
+        Write-Verbose "No existing page found - creating new page under parent '$ParentPageTitle'"
         if ($PSCmdlet.ShouldProcess($PageTitle, "Create Confluence page")) {
             try {
                 $createParams = @{
@@ -151,16 +165,15 @@ function Sync-ConfluenceMFAReport {
                     Title    = $PageTitle
                     Body     = $adfContent
                 }
-                if ($ParentPageId) {
-                    $createParams['ParentId'] = $ParentPageId
-                    Write-Verbose "Creating page under parent ID: $ParentPageId"
+                if ($parentPageId) {
+                    $createParams['ParentId'] = $parentPageId
                 }
                 $result = New-ConfluencePage @createParams
 
                 # Update cache after successful create (Story 10.4)
                 Set-ConfluencePageCache -PageId $result.Id -SpaceKey $SpaceKey -PageTitle $PageTitle -Hash $newHash
 
-                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id))"
+                Write-Verbose "Successfully created page '$PageTitle' (ID: $($result.Id)) under parent '$ParentPageTitle'"
                 return [PSCustomObject]@{
                     Id       = $result.Id
                     Title    = $result.Title
