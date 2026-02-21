@@ -188,10 +188,22 @@ function Invoke-ConfluenceExtensionSync {
                         Write-Verbose "Could not fetch MFA data: $_"
                     }
 
-                    $syncResult = Sync-ConfluenceUserInventory @syncParams
-                    $CompanyResult.Users = $userCount
-                    $CompanyResult.Logs.Add("User sync complete: $userCount users")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection: hash all inputs that affect the user page
+                    $userDataToHash = @{ Users = $users; Licenses = $syncParams['Licenses']; MFAData = $syncParams['MFAData'] }
+                    $userDataHash = Get-ConfluenceDataHash -InputData $userDataToHash
+                    $userCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'UserInventory'
+                    if ($userCachedHash -and $userCachedHash.Hash -eq $userDataHash) {
+                        $CompanyResult.Users = $userCount
+                        $CompanyResult.Logs.Add("User sync skipped: data unchanged ($userCount users)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync skipped: data unchanged since last sync ($userCount users)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceUserInventory @syncParams
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'UserInventory' -Hash $userDataHash
+                        $CompanyResult.Users = $userCount
+                        $CompanyResult.Logs.Add("User sync complete: $userCount users")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "User sync complete: $userCount users synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('User sync skipped: no users found')
@@ -220,10 +232,21 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing endpoint inventory ($deviceCount devices)"
 
                 if ($deviceCount -gt 0) {
-                    $syncResult = Sync-ConfluenceEndpointInventory -SpaceKey $SpaceKey -Endpoints $devices
-                    $CompanyResult.Devices = $deviceCount
-                    $CompanyResult.Logs.Add("Device sync complete: $deviceCount devices")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync complete: $deviceCount devices synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection
+                    $deviceDataHash = Get-ConfluenceDataHash -InputData $devices
+                    $deviceCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'EndpointInventory'
+                    if ($deviceCachedHash -and $deviceCachedHash.Hash -eq $deviceDataHash) {
+                        $CompanyResult.Devices = $deviceCount
+                        $CompanyResult.Logs.Add("Device sync skipped: data unchanged ($deviceCount devices)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync skipped: data unchanged since last sync ($deviceCount devices)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceEndpointInventory -SpaceKey $SpaceKey -Endpoints $devices
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'EndpointInventory' -Hash $deviceDataHash
+                        $CompanyResult.Devices = $deviceCount
+                        $CompanyResult.Logs.Add("Device sync complete: $deviceCount devices")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Device sync complete: $deviceCount devices synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('Device sync skipped: no devices found')
@@ -259,9 +282,20 @@ function Invoke-ConfluenceExtensionSync {
                         $syncParams['Users'] = @($ExtensionCache.Users)
                     }
 
-                    $syncResult = Sync-ConfluenceLicenseReport @syncParams
-                    $CompanyResult.Logs.Add("License sync complete: $licenseCount licenses")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "License sync complete: $licenseCount licenses synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection: hash licenses and users (both affect the page)
+                    $licenseDataToHash = @{ Licenses = $licenses; Users = $syncParams['Users'] }
+                    $licenseDataHash = Get-ConfluenceDataHash -InputData $licenseDataToHash
+                    $licenseCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'LicenseReport'
+                    if ($licenseCachedHash -and $licenseCachedHash.Hash -eq $licenseDataHash) {
+                        $CompanyResult.Logs.Add("License sync skipped: data unchanged ($licenseCount licenses)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "License sync skipped: data unchanged since last sync ($licenseCount licenses)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceLicenseReport @syncParams
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'LicenseReport' -Hash $licenseDataHash
+                        $CompanyResult.Logs.Add("License sync complete: $licenseCount licenses")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "License sync complete: $licenseCount licenses synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('License sync skipped: no licenses in cache')
@@ -289,9 +323,19 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Syncing MFA report ($($mfaData.Count) users)"
 
                 if ($mfaData.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -MFAData $mfaData
-                    $CompanyResult.Logs.Add("MFA sync complete: $($mfaData.Count) users")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($mfaData.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection
+                    $mfaDataHash = Get-ConfluenceDataHash -InputData $mfaData
+                    $mfaCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'MFAReport'
+                    if ($mfaCachedHash -and $mfaCachedHash.Hash -eq $mfaDataHash) {
+                        $CompanyResult.Logs.Add("MFA sync skipped: data unchanged ($($mfaData.Count) users)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync skipped: data unchanged since last sync ($($mfaData.Count) users)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceMFAReport -SpaceKey $SpaceKey -MFAData $mfaData
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'MFAReport' -Hash $mfaDataHash
+                        $CompanyResult.Logs.Add("MFA sync complete: $($mfaData.Count) users")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "MFA sync complete: $($mfaData.Count) users synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('MFA sync skipped: no MFA data available')
@@ -345,9 +389,19 @@ function Invoke-ConfluenceExtensionSync {
                         }
                     }
 
-                    $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -TeamsData $enrichedTeams
-                    $CompanyResult.Logs.Add("Teams sync complete: $teamsCount teams")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync complete: $teamsCount teams synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection
+                    $teamsDataHash = Get-ConfluenceDataHash -InputData $enrichedTeams
+                    $teamsCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'TeamsInventory'
+                    if ($teamsCachedHash -and $teamsCachedHash.Hash -eq $teamsDataHash) {
+                        $CompanyResult.Logs.Add("Teams sync skipped: data unchanged ($teamsCount teams)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync skipped: data unchanged since last sync ($teamsCount teams)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceTeamsInventory -SpaceKey $SpaceKey -TeamsData $enrichedTeams
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'TeamsInventory' -Hash $teamsDataHash
+                        $CompanyResult.Logs.Add("Teams sync complete: $teamsCount teams")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "Teams sync complete: $teamsCount teams synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('Teams sync skipped: no Teams data in cache')
@@ -457,9 +511,19 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Combined site data: $($allSitesData.Count) total sites"
 
                 if ($allSitesData.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $allSitesData
-                    $CompanyResult.Logs.Add("SharePoint/OneDrive sync complete: $($allSitesData.Count) sites")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint/OneDrive sync complete: $($allSitesData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection
+                    $spDataHash = Get-ConfluenceDataHash -InputData $allSitesData
+                    $spCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'SharePointInventory'
+                    if ($spCachedHash -and $spCachedHash.Hash -eq $spDataHash) {
+                        $CompanyResult.Logs.Add("SharePoint/OneDrive sync skipped: data unchanged ($($allSitesData.Count) sites)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint/OneDrive sync skipped: data unchanged since last sync ($($allSitesData.Count) sites)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceSharePointInventory -SpaceKey $SpaceKey -SharePointData $allSitesData
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'SharePointInventory' -Hash $spDataHash
+                        $CompanyResult.Logs.Add("SharePoint/OneDrive sync complete: $($allSitesData.Count) sites")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SharePoint/OneDrive sync complete: $($allSitesData.Count) sites synced (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('SharePoint sync skipped: no SharePoint/OneDrive data available')
@@ -488,9 +552,19 @@ function Invoke-ConfluenceExtensionSync {
                 Write-Verbose "Fetched $($servicePrincipals.Count) service principals"
 
                 if ($servicePrincipals.Count -gt 0) {
-                    $syncResult = Sync-ConfluenceSaaSInventory -SpaceKey $SpaceKey -ServicePrincipals $servicePrincipals
-                    $CompanyResult.Logs.Add("SaaS Apps sync complete: $($servicePrincipals.Count) service principals processed")
-                    Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SaaS Apps sync complete: $($servicePrincipals.Count) service principals (Action: $($syncResult.Action))" -Sev 'Info'
+                    # Data-level change detection
+                    $saasDataHash = Get-ConfluenceDataHash -InputData $servicePrincipals
+                    $saasCachedHash = Get-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'SaaSInventory'
+                    if ($saasCachedHash -and $saasCachedHash.Hash -eq $saasDataHash) {
+                        $CompanyResult.Logs.Add("SaaS Apps sync skipped: data unchanged ($($servicePrincipals.Count) service principals)")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SaaS Apps sync skipped: data unchanged since last sync ($($servicePrincipals.Count) service principals)" -Sev 'Info'
+                    }
+                    else {
+                        $syncResult = Sync-ConfluenceSaaSInventory -SpaceKey $SpaceKey -ServicePrincipals $servicePrincipals
+                        Set-ConfluenceDataCache -SpaceKey $SpaceKey -DataType 'SaaSInventory' -Hash $saasDataHash
+                        $CompanyResult.Logs.Add("SaaS Apps sync complete: $($servicePrincipals.Count) service principals processed")
+                        Write-LogMessage -API 'ConfluenceSync' -tenant $TenantFilter -message "SaaS Apps sync complete: $($servicePrincipals.Count) service principals (Action: $($syncResult.Action))" -Sev 'Info'
+                    }
                 }
                 else {
                     $CompanyResult.Logs.Add('SaaS Apps sync skipped: no service principals found')
