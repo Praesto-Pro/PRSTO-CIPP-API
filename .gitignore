@@ -22,18 +22,18 @@ yarn.lock
 #.bmad/
 #.mcp.json
 
-#claude files
+# Claude files
 .claude/
 CLAUDE.md
-nul
 
-#Gemini files
+# Gemini files
 .gemini
 
-#docs files to ignore
-#docs/
-
-#scripts files to ignore
+# Misc
+nul
 scripts/
 package-lock.json
 
+# Ignore all root PowerShell files except profile.ps1
+/*.ps1
+!/profile.ps1

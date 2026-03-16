@@ -45,7 +45,6 @@ function Invoke-CIPPStandardAutopilotProfile {
     # Get the current configuration
 
     if ($TestResult -eq $false) {
-        Write-Host "We're exiting as the correct license is not present for this standard."
         return $true
     } #we're done.
     try {
@@ -53,7 +52,7 @@ function Invoke-CIPPStandardAutopilotProfile {
             Where-Object { $_.displayName -eq $Settings.DisplayName } |
             Select-Object -Property displayName, description, deviceNameTemplate, locale, preprovisioningAllowed, hardwareHashExtractionEnabled, outOfBoxExperienceSetting
 
-        if ($Settings.NotLocalAdmin -eq $true) { $userType = 'Standard' } else { $userType = 'Administrator' }
+        if ($Settings.NotLocalAdmin -eq $true) { $userType = 'standard' } else { $userType = 'administrator' }
         if ($Settings.SelfDeployingMode -eq $true) {
             $DeploymentMode = 'shared'
             $Settings.AllowWhiteGlove = $false
@@ -111,18 +110,18 @@ function Invoke-CIPPStandardAutopilotProfile {
         } else {
             try {
                 $Parameters = @{
-                    tenantFilter       = $Tenant
-                    displayName        = $Settings.DisplayName
-                    description        = $Settings.Description
-                    userType           = $userType
+                    TenantFilter       = $Tenant
+                    DisplayName        = $Settings.DisplayName
+                    Description        = $Settings.Description
+                    UserType           = $userType
                     DeploymentMode     = $DeploymentMode
                     AssignTo           = $Settings.AssignToAllDevices
-                    devicenameTemplate = $Settings.DeviceNameTemplate
-                    allowWhiteGlove    = $Settings.AllowWhiteGlove
+                    DeviceNameTemplate = $Settings.DeviceNameTemplate
+                    AllowWhiteGlove    = $Settings.AllowWhiteGlove
                     CollectHash        = $Settings.CollectHash
-                    hideChangeAccount  = $true
-                    hidePrivacy        = $Settings.HidePrivacy
-                    hideTerms          = $Settings.HideTerms
+                    HideChangeAccount  = $true
+                    HidePrivacy        = $Settings.HidePrivacy
+                    HideTerms          = $Settings.HideTerms
                     AutoKeyboard       = $Settings.AutoKeyboard
                     Language           = $Settings.Languages.value
                 }
