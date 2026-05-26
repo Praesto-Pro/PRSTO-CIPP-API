@@ -14,6 +14,7 @@ Output/
 index.md
 node_modules/.yarn-integrity
 yarn.lock
+Shared/CIPPSharp/obj/
 
 # Cursor IDE
 .cursor/rules
