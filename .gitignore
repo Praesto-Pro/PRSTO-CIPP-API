@@ -28,3 +28,9 @@ proxyman.pem
 # Pester test runner artifacts (Invoke-CippTests.ps1 -CI / -Coverage)
 Tests/TestResults.xml
 Tests/coverage.xml
+
+# Local AI assistant configuration and generated command files
+.gemini/
+AGENTS.md
+CLAUDE.md
+nul
