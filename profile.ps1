@@ -55,30 +55,15 @@ foreach ($Module in $Modules) {
         Import-Module -Name (Join-Path $ModulesPath $Module) -ErrorAction Stop
         $SwModule.Stop()
         $Timings["Module_$Module"] = $SwModule.Elapsed.TotalMilliseconds
-        Write-Information "Successfully loaded module: $Module"
     } catch {
         $SwModule.Stop()
         $Timings["Module_$Module"] = $SwModule.Elapsed.TotalMilliseconds
-        Write-Warning "FAILED to load module $Module : $($_.Exception.Message)"
+        Write-LogMessage -message "Failed to import module - $Module" -LogData (Get-CippException -Exception $_) -Sev 'debug'
         Write-Error $_.Exception.Message
     }
 }
 $SwCoreModules.Stop()
 $Timings['CoreModules'] = $SwCoreModules.Elapsed.TotalMilliseconds
-
-# Load ConfluenceAPI module (versioned folder structure requires explicit path to .psd1)
-$SwConfluenceModule = [System.Diagnostics.Stopwatch]::StartNew()
-try {
-    $ConfluenceAPIPath = Join-Path $ModulesPath 'ConfluenceAPI' | Join-Path -ChildPath '0.1.0' | Join-Path -ChildPath 'ConfluenceAPI.psd1'
-    Import-Module -Name $ConfluenceAPIPath -ErrorAction Stop
-    $SwConfluenceModule.Stop()
-    $Timings['Module_ConfluenceAPI'] = $SwConfluenceModule.Elapsed.TotalMilliseconds
-} catch {
-    $SwConfluenceModule.Stop()
-    $Timings['Module_ConfluenceAPI'] = $SwConfluenceModule.Elapsed.TotalMilliseconds
-    Write-LogMessage -message 'Failed to import module - ConfluenceAPI' -LogData (Get-CippException -Exception $_) -Sev 'debug'
-    Write-Error $_.Exception.Message
-}
 
 # Load CIPPSharp assembly once at startup for all worker types
 $SwCIPPSharp = [System.Diagnostics.Stopwatch]::StartNew()

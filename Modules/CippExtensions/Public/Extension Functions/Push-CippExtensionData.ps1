@@ -14,12 +14,6 @@ function Push-CippExtensionData {
                 Invoke-HuduExtensionSync -Configuration $Config -TenantFilter $TenantFilter
             }
         }
-        'Confluence' {
-            if ($Config.Confluence.Enabled) {
-                Write-Host 'Performing Confluence Extension Sync...'
-                Invoke-ConfluenceExtensionSync -Configuration $Config -TenantFilter $TenantFilter
-            }
-        }
         'CustomData' {
             Write-Host 'Perfoming Custom Data Extension Sync...'
             Invoke-CustomDataSync -TenantFilter $TenantFilter

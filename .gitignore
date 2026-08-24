@@ -27,6 +27,7 @@ Shared/CIPPSharp/obj/
 # Claude files
 .claude/
 CLAUDE.md
+AGENTS.md
 
 # Gemini files
 .gemini
